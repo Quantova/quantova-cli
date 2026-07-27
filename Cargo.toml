@@ -1,0 +1,21 @@
+# Copyright 2026 Quantova Inc
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+
+[package]
+name = "quantova-cli"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+description = "The Quantova command line client. A terminal tool for post quantum accounts, signed transactions, contract deploy and call, and node queries over the Quantova gateway, built on the QCore Rust core so no signing or wire is ever hand rolled."
+repository = "https://github.com/Quantova/quantova-cli"
+keywords = ["post-quantum", "blockchain", "cli", "wallet", "quantova"]
+categories = ["command-line-utilities", "cryptography::cryptocurrencies"]
+
+[[bin]]
+name = "qtv"
+path = "src/main.rs"
+
+[dependencies]
+# The one Quantova client core. The CLI reuses its key derivation, ML-DSA-65 signing,
+# transaction building, and gateway wire rather than restating any of them.
+qcore = { path = "../QCore.rs" }
