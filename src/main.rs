@@ -9,6 +9,7 @@ use qcore::{
     account_address, account_public_key, contract::DeployParam, generate_seed, mnemonic_from_seed,
     seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
 };
+use zeroize::Zeroizing;
 
 const DEFAULT_GATEWAY: &str = "http://127.0.0.1:40404";
 
@@ -111,7 +112,7 @@ fn require_max_fee(flags: &Flags) -> Result<u128, String> {
 }
 
 // a key is a sixty four character seed in hex, a twenty four word recovery phrase, or @path to a file holding either
-fn resolve_key(flags: &Flags) -> Result<[u8; 32], String> {
+fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = flags
         .key
         .clone()
@@ -119,24 +120,24 @@ fn resolve_key(flags: &Flags) -> Result<[u8; 32], String> {
     parse_key_value(&raw)
 }
 
-fn parse_key_value(raw: &str) -> Result<[u8; 32], String> {
+fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = raw.trim();
     if let Some(path) = raw.strip_prefix('@') {
         let body = std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?;
         return parse_key_value(&body);
     }
     if raw.split_whitespace().count() >= 2 {
-        return seed_from_mnemonic(raw);
+        return seed_from_mnemonic(raw).map(Zeroizing::new);
     }
     parse_seed_hex(raw)
 }
 
-fn parse_seed_hex(hex: &str) -> Result<[u8; 32], String> {
+fn parse_seed_hex(hex: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let hex = hex.trim();
     if hex.len() != 64 {
         return Err("a seed is sixty four hex characters, or pass a twenty four word phrase".to_string());
     }
-    let mut seed = [0u8; 32];
+    let mut seed = Zeroizing::new([0u8; 32]);
     for (i, pair) in hex.as_bytes().chunks(2).enumerate() {
         let text = std::str::from_utf8(pair).map_err(|_| "the seed is not hex")?;
         seed[i] = u8::from_str_radix(text, 16).map_err(|_| "the seed is not hex")?;
@@ -181,7 +182,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
     }
 }
 
-fn key_from_arg_or_flag(arg: Option<&String>, flags: &Flags) -> Result<[u8; 32], String> {
+fn key_from_arg_or_flag(arg: Option<&String>, flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     match arg {
         Some(value) => parse_key_value(value),
         None => resolve_key(flags),
