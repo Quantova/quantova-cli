@@ -26,6 +26,7 @@ struct Flags {
     key: Option<String>,
     index: u64,
     max_fee: u128,
+    max_fee_set: bool,
     meter: u64,
 }
 
@@ -61,7 +62,11 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         gateway: std::env::var("QTV_GATEWAY").unwrap_or_else(|_| DEFAULT_GATEWAY.to_string()),
         key: std::env::var("QTV_KEY").ok(),
         index: 0,
-        max_fee: u128::MAX,
+        // Fail closed: with no ceiling set, a signing command refuses rather than accepting whatever
+        // fee the gateway dictates. A gateway that reports the account balance as the fee would drain
+        // it, so the ceiling is required before anything is signed.
+        max_fee: 0,
+        max_fee_set: false,
         meter: qcore::NATIVE_TRANSFER_METER,
     };
     let mut rest = Vec::new();
@@ -79,7 +84,8 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
                 flags.index = value("--index")?.parse().map_err(|_| "the index is not a number")?
             }
             "--max-fee" => {
-                flags.max_fee = value("--max-fee")?.parse().map_err(|_| "the max fee is not a number")?
+                flags.max_fee = value("--max-fee")?.parse().map_err(|_| "the max fee is not a number")?;
+                flags.max_fee_set = true;
             }
             "--meter" => {
                 flags.meter = value("--meter")?.parse().map_err(|_| "the meter is not a number")?
@@ -89,6 +95,19 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         i += 1;
     }
     Ok((flags, rest))
+}
+
+// the fee ceiling a signing command will not exceed. It has no default: a command that signs must be
+// told the most it may pay, so an untrusted gateway can never dictate an unbounded fee and drain the
+// account. A read only command never calls this.
+fn require_max_fee(flags: &Flags) -> Result<u128, String> {
+    if flags.max_fee_set {
+        Ok(flags.max_fee)
+    } else {
+        Err("pass --max-fee <n>, the most Quon you will let the gateway charge in fee for this \
+             transaction, so an untrusted gateway cannot inflate the fee to drain the account"
+            .to_string())
+    }
 }
 
 // a key is a sixty four character seed in hex, a twenty four word recovery phrase, or @path to a file holding either
@@ -185,7 +204,8 @@ fn cmd_account(args: &[String], flags: &Flags) -> Result<(), String> {
 
 fn cmd_register(flags: &Flags) -> Result<(), String> {
     let seed = resolve_key(flags)?;
-    let (_signed, outcome) = Client::new(flags.gateway.clone()).register(&seed, flags.index, flags.max_fee)?;
+    let max_fee = require_max_fee(flags)?;
+    let (_signed, outcome) = Client::new(flags.gateway.clone()).register(&seed, flags.index, max_fee)?;
     report_submit("registered", outcome)
 }
 
@@ -196,8 +216,9 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
     let to = &args[0];
     let amount: u64 = args[1].parse().map_err(|_| "the amount is not a number")?;
     let seed = resolve_key(flags)?;
+    let max_fee = require_max_fee(flags)?;
     let (_signed, outcome) =
-        Client::new(flags.gateway.clone()).transfer(&seed, flags.index, to, amount, flags.max_fee)?;
+        Client::new(flags.gateway.clone()).transfer(&seed, flags.index, to, amount, max_fee)?;
     report_submit("submitted", outcome)
 }
 
@@ -229,9 +250,10 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let path = args.get(1).ok_or("usage: qtv contract deploy <container-file>")?;
             let container = std::fs::read(path).map_err(|e| format!("read the container: {e}"))?;
             let seed = resolve_key(flags)?;
+            let max_fee = require_max_fee(flags)?;
             let meter = deploy_meter(flags);
             let (_signed, outcome, address) = Client::new(flags.gateway.clone())
-                .deploy_with_params(&seed, flags.index, &container, &[] as &[DeployParam], meter, flags.max_fee)?;
+                .deploy_with_params(&seed, flags.index, &container, &[] as &[DeployParam], meter, max_fee)?;
             println!("contract {address}");
             report_submit("deployed", outcome)
         }
@@ -242,8 +264,9 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let target = &args[1];
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
+            let max_fee = require_max_fee(flags)?;
             let (_signed, outcome) = Client::new(flags.gateway.clone())
-                .call(&seed, flags.index, target, call_args, flags.meter, flags.max_fee)?;
+                .call(&seed, flags.index, target, call_args, flags.meter, max_fee)?;
             report_submit("called", outcome)
         }
         "storage" => {
@@ -342,6 +365,6 @@ fn print_usage() {
     println!("  -g, --gateway <url>   the gateway to talk to, or QTV_GATEWAY, default {DEFAULT_GATEWAY}");
     println!("  -k, --key <value>     a seed hex, a phrase, or @file, or QTV_KEY");
     println!("  -i, --index <n>       the account index under one seed, default 0");
-    println!("      --max-fee <n>     refuse to sign if the gateway fee is above this");
+    println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!("      --meter <n>       the execution meter for a contract call");
 }

@@ -20,7 +20,7 @@ qtv send <to> <amount> --max-fee 500
 
 ## The fee ceiling
 
-The gateway reports the fee, and the CLI signs at that fee. Because a gateway is not always trusted, `--max-fee` sets the most you will pay. If the gateway asks for more the CLI refuses to sign and returns an error, so an inflated fee can never drain a signer. Leave it out and the CLI accepts any fee the gateway reports.
+The gateway reports the fee, and the CLI signs at that fee. Because a gateway is not always trusted, `--max-fee` sets the most you will pay. If the gateway asks for more the CLI refuses to sign and returns an error, so an inflated fee can never drain a signer. A signing command requires `--max-fee`, and refuses to sign without it, so a gateway can never dictate an unbounded fee.
 
 ## Nonces
 

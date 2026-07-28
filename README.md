@@ -81,7 +81,7 @@ qtv info                        the chain id, genesis hash, height, fee, and ver
 qtv tx <tx-id>                  where a transaction is, pending, finalised, or unknown
 ```
 
-`amount` is a whole number of base units. The fee is the gateway reported transfer fee. Pass `--max-fee <n>` to refuse to sign if that fee is above your ceiling, which stops an untrusted gateway from draining a signer.
+`amount` is a whole number of base units. The fee is the gateway reported transfer fee. A signing command requires `--max-fee <n>`, your fee ceiling, and refuses to sign if the reported fee is above it, which stops an untrusted gateway from dictating an unbounded fee to drain a signer.
 
 ### contracts
 
