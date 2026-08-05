@@ -127,7 +127,7 @@ fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
         return parse_key_value(&body);
     }
     if raw.split_whitespace().count() >= 2 {
-        return seed_from_mnemonic(raw).map(Zeroizing::new);
+        return seed_from_mnemonic(raw);
     }
     parse_seed_hex(raw)
 }
@@ -149,7 +149,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "new" => {
             let seed = generate_seed()?;
-            println!("seed    {}", to_hex(&seed));
+            println!("seed    {}", to_hex(&seed[..]));
             println!("phrase  {}", mnemonic_from_seed(&seed));
             println!("address {}", account_address(&seed, flags.index));
             println!();
@@ -174,7 +174,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
                 return Err("usage: qtv key restore <twenty four word phrase>".to_string());
             }
             let seed = seed_from_mnemonic(&phrase)?;
-            println!("seed    {}", to_hex(&seed));
+            println!("seed    {}", to_hex(&seed[..]));
             println!("address {}", account_address(&seed, flags.index));
             Ok(())
         }
