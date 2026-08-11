@@ -24,7 +24,7 @@ fn main() {
 // the flags every command may carry, pulled out of the argument list so the rest are positionals
 struct Flags {
     gateway: String,
-    key: Option<String>,
+    key: Option<Zeroizing<String>>,
     index: u64,
     max_fee: u128,
     max_fee_set: bool,
@@ -61,7 +61,7 @@ fn run(args: &[String]) -> Result<(), String> {
 fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
     let mut flags = Flags {
         gateway: std::env::var("QTV_GATEWAY").unwrap_or_else(|_| DEFAULT_GATEWAY.to_string()),
-        key: std::env::var("QTV_KEY").ok(),
+        key: std::env::var("QTV_KEY").ok().map(Zeroizing::new),
         index: 0,
         // Fail closed: with no ceiling set, a signing command refuses rather than accepting whatever
         // fee the gateway dictates. A gateway that reports the account balance as the fee would drain
@@ -80,7 +80,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         };
         match arg.as_str() {
             "--gateway" | "-g" => flags.gateway = value("--gateway")?,
-            "--key" | "-k" => flags.key = Some(value("--key")?),
+            "--key" | "-k" => flags.key = Some(Zeroizing::new(value("--key")?)),
             "--index" | "-i" => {
                 flags.index = value("--index")?.parse().map_err(|_| "the index is not a number")?
             }
@@ -123,7 +123,9 @@ fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
 fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = raw.trim();
     if let Some(path) = raw.strip_prefix('@') {
-        let body = std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?;
+        let body = Zeroizing::new(
+            std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?,
+        );
         return parse_key_value(&body);
     }
     if raw.split_whitespace().count() >= 2 {
