@@ -9,7 +9,7 @@ use qcore::{
     account_address, account_public_key, contract::DeployParam, generate_seed, mnemonic_from_seed,
     seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
 };
-use zeroize::Zeroizing;
+use qtv_wipe::Zeroizing;
 
 const DEFAULT_GATEWAY: &str = "http://127.0.0.1:40404";
 
