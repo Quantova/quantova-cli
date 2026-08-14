@@ -151,8 +151,10 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "new" => {
             let seed = generate_seed()?;
-            println!("seed    {}", to_hex(&seed[..]));
-            println!("phrase  {}", mnemonic_from_seed(&seed));
+            let seed_hex = Zeroizing::new(to_hex(&seed[..]));
+            let phrase = Zeroizing::new(mnemonic_from_seed(&seed));
+            println!("seed    {}", seed_hex.as_str());
+            println!("phrase  {}", phrase.as_str());
             println!("address {}", account_address(&seed, flags.index));
             println!();
             println!("Keep the seed and the phrase secret. The phrase is the only backup of this key.");
@@ -171,12 +173,13 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             Ok(())
         }
         "restore" => {
-            let phrase = args[1..].join(" ");
+            let phrase = Zeroizing::new(args[1..].join(" "));
             if phrase.trim().is_empty() {
                 return Err("usage: qtv key restore <twenty four word phrase>".to_string());
             }
             let seed = seed_from_mnemonic(&phrase)?;
-            println!("seed    {}", to_hex(&seed[..]));
+            let seed_hex = Zeroizing::new(to_hex(&seed[..]));
+            println!("seed    {}", seed_hex.as_str());
             println!("address {}", account_address(&seed, flags.index));
             Ok(())
         }
