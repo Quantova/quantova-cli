@@ -25,6 +25,7 @@ fn main() {
 struct Flags {
     gateway: String,
     key: Option<Zeroizing<String>>,
+    key_on_argv: bool,
     index: u64,
     max_fee: u128,
     max_fee_set: bool,
@@ -62,6 +63,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
     let mut flags = Flags {
         gateway: std::env::var("QTV_GATEWAY").unwrap_or_else(|_| DEFAULT_GATEWAY.to_string()),
         key: std::env::var("QTV_KEY").ok().map(Zeroizing::new),
+        key_on_argv: false,
         index: 0,
         // Fail closed: with no ceiling set, a signing command refuses rather than accepting whatever
         // fee the gateway dictates. A gateway that reports the account balance as the fee would drain
@@ -80,7 +82,10 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         };
         match arg.as_str() {
             "--gateway" | "-g" => flags.gateway = value("--gateway")?,
-            "--key" | "-k" => flags.key = Some(Zeroizing::new(value("--key")?)),
+            "--key" | "-k" => {
+                flags.key = Some(Zeroizing::new(value("--key")?));
+                flags.key_on_argv = true;
+            }
             "--index" | "-i" => {
                 flags.index = value("--index")?.parse().map_err(|_| "the index is not a number")?
             }
@@ -111,12 +116,24 @@ fn require_max_fee(flags: &Flags) -> Result<u128, String> {
     }
 }
 
+fn warn_key_on_argv(raw: &str) {
+    if !raw.trim_start().starts_with('@') {
+        eprintln!(
+            "warning: a key on the command line is visible to other users through the process list \
+             and shell history; prefer @file or the QTV_KEY environment variable"
+        );
+    }
+}
+
 // a key is a sixty four character seed in hex, a twenty four word recovery phrase, or @path to a file holding either
 fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = flags
         .key
         .clone()
         .ok_or("no key given, pass --key <seed-or-phrase> or set QTV_KEY")?;
+    if flags.key_on_argv {
+        warn_key_on_argv(&raw);
+    }
     parse_key_value(&raw)
 }
 
@@ -189,7 +206,10 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
 
 fn key_from_arg_or_flag(arg: Option<&String>, flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     match arg {
-        Some(value) => parse_key_value(value),
+        Some(value) => {
+            warn_key_on_argv(value);
+            parse_key_value(value)
+        }
         None => resolve_key(flags),
     }
 }
