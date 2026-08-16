@@ -194,6 +194,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             if phrase.trim().is_empty() {
                 return Err("usage: qtv key restore <twenty four word phrase>".to_string());
             }
+            warn_key_on_argv(&phrase);
             let seed = seed_from_mnemonic(&phrase)?;
             let seed_hex = Zeroizing::new(to_hex(&seed[..]));
             println!("seed    {}", seed_hex.as_str());
