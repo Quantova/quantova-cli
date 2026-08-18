@@ -6,8 +6,9 @@
 // the terminal never restates a signature or a request the machine would reject.
 
 use qcore::{
-    account_address, account_public_key, address_payload, contract::DeployParam, generate_seed,
-    mnemonic_from_seed, seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
+    account_address, account_public_key, address_payload,
+    contract::{DeployParam, FieldArg, FieldValue, DEFAULT_REGION_OFFSET},
+    generate_seed, mnemonic_from_seed, seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
 };
 use qtv_wipe::Zeroizing;
 
@@ -31,6 +32,9 @@ struct Flags {
     max_fee_set: bool,
     meter: u64,
     value: u64,
+    scheme_off: Option<u64>,
+    ptr_off: Option<u64>,
+    fields: Vec<String>,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -74,6 +78,9 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         max_fee_set: false,
         meter: qcore::NATIVE_TRANSFER_METER,
         value: 0,
+        scheme_off: None,
+        ptr_off: None,
+        fields: Vec::new(),
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -102,6 +109,13 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             "--value" => {
                 flags.value = value("--value")?.parse().map_err(|_| "the value is not a number")?
             }
+            "--scheme-off" => {
+                flags.scheme_off = Some(value("--scheme-off")?.parse().map_err(|_| "the scheme offset is not a number")?)
+            }
+            "--ptr-off" => {
+                flags.ptr_off = Some(value("--ptr-off")?.parse().map_err(|_| "the pointer offset is not a number")?)
+            }
+            "--field" => flags.fields.push(value("--field")?),
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -307,6 +321,24 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                 .call_payable(&seed, flags.index, target, call_args, flags.value, flags.meter, max_fee)?;
             report_submit("called", outcome)
         }
+        "order" => {
+            if args.len() < 3 {
+                return Err("usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
+                            --ptr-off <n> --field <offset:type:value> ... --key <owner>".to_string());
+            }
+            let target = &args[1];
+            let selector = parse_selector(&args[2])?;
+            let scheme_off = flags.scheme_off.ok_or("pass --scheme-off <n>, the order scheme word offset")?;
+            let ptr_off = flags.ptr_off.ok_or("pass --ptr-off <n>, the order pointer word offset")?;
+            let fields = parse_order_fields(&flags.fields)?;
+            let seed = resolve_key(flags)?;
+            let max_fee = require_max_fee(flags)?;
+            let (_signed, outcome, _order) = Client::new(flags.gateway.clone()).call_typed_order(
+                &seed, flags.index, target, selector, scheme_off, ptr_off, DEFAULT_REGION_OFFSET,
+                &fields, &seed, flags.index, flags.meter, max_fee,
+            )?;
+            report_submit("ordered", outcome)
+        }
         "storage" => {
             let address = args.get(1).ok_or("usage: qtv contract storage <address>")?;
             let slots = Client::new(flags.gateway.clone()).storage(address)?;
@@ -316,7 +348,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             }
             Ok(())
         }
-        _ => Err("usage: qtv contract <deploy | call | storage>".to_string()),
+        _ => Err("usage: qtv contract <deploy | call | order | storage>".to_string()),
     }
 }
 
@@ -345,6 +377,33 @@ fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
         params.push(param);
     }
     Ok(params)
+}
+
+fn parse_selector(text: &str) -> Result<[u8; 4], String> {
+    let bytes = from_hex(text)?;
+    bytes.as_slice().try_into().map_err(|_| "a selector is four bytes of hex".to_string())
+}
+
+// An order field is offset:type:value, laid into the signed order region at the offset the entry reads.
+// type is u64, u128, addr for a Q1 address, or name for a bare label.
+fn parse_order_fields(specs: &[String]) -> Result<Vec<FieldArg>, String> {
+    let mut fields = Vec::with_capacity(specs.len());
+    for spec in specs {
+        let mut parts = spec.splitn(3, ':');
+        let off = parts.next().ok_or_else(|| format!("the field '{spec}' has no offset"))?;
+        let kind = parts.next().ok_or_else(|| format!("the field '{spec}' has no type"))?;
+        let val = parts.next().ok_or_else(|| format!("the field '{spec}' has no value"))?;
+        let offset: u64 = off.parse().map_err(|_| format!("the field offset '{off}' is not a number"))?;
+        let value = match kind {
+            "u64" => FieldValue::Word(val.parse().map_err(|_| format!("the u64 field '{val}' is not a number"))?),
+            "u128" => FieldValue::wide(val.parse().map_err(|_| format!("the u128 field '{val}' is not a number"))?),
+            "addr" => FieldValue::Address(address_payload(val)?),
+            "name" => FieldValue::name(val),
+            other => return Err(format!("unknown field type '{other}', use u64, u128, addr, or name")),
+        };
+        fields.push(FieldArg { offset, value });
+    }
+    Ok(fields)
 }
 
 fn cmd_asset(args: &[String], flags: &Flags) -> Result<(), String> {
@@ -439,6 +498,7 @@ fn print_usage() {
     println!("  tx <tx-id>                       where a transaction is");
     println!("  contract deploy <file> [param]   deploy a Quanta container with genesis deploy params");
     println!("  contract call <address> <hex>    call a contract, add --value <n> for a paid entry");
+    println!("  contract order <address> <sel>   submit an owner or operator signed order");
     println!("  contract storage <address>       read a contract storage slots");
     println!("  asset balance <issuer> <holder>  a holder balance of an issuer's asset");
     println!("  events <height>                  the contract events in a block");
@@ -458,4 +518,7 @@ fn print_usage() {
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!("      --meter <n>       the execution meter for a contract call");
     println!("      --value <n>       the Quon a paid contract call moves, read by the entry at @value");
+    println!("      --scheme-off <n>  the order scheme word offset, for contract order");
+    println!("      --ptr-off <n>     the order pointer word offset, for contract order");
+    println!("      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name");
 }
