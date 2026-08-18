@@ -6,8 +6,8 @@
 // the terminal never restates a signature or a request the machine would reject.
 
 use qcore::{
-    account_address, account_public_key, contract::DeployParam, generate_seed, mnemonic_from_seed,
-    seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
+    account_address, account_public_key, address_payload, contract::DeployParam, generate_seed,
+    mnemonic_from_seed, seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
 };
 use qtv_wipe::Zeroizing;
 
@@ -30,6 +30,7 @@ struct Flags {
     max_fee: u128,
     max_fee_set: bool,
     meter: u64,
+    value: u64,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -51,6 +52,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "info" => cmd_info(&flags),
         "tx" => cmd_tx(&rest, &flags),
         "contract" => cmd_contract(&rest, &flags),
+        "asset" => cmd_asset(&rest, &flags),
         "events" => cmd_events(&rest, &flags),
         other => {
             print_usage();
@@ -71,6 +73,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         max_fee: 0,
         max_fee_set: false,
         meter: qcore::NATIVE_TRANSFER_METER,
+        value: 0,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -95,6 +98,9 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             }
             "--meter" => {
                 flags.meter = value("--meter")?.parse().map_err(|_| "the meter is not a number")?
+            }
+            "--value" => {
+                flags.value = value("--value")?.parse().map_err(|_| "the value is not a number")?
             }
             _ => rest.push(arg.clone()),
         }
@@ -274,26 +280,33 @@ fn cmd_tx(args: &[String], flags: &Flags) -> Result<(), String> {
 fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "deploy" => {
-            let path = args.get(1).ok_or("usage: qtv contract deploy <container-file>")?;
+            let path = args.get(1).ok_or(
+                "usage: qtv contract deploy <container-file> [param ...]\n\
+                 a param is typed as addr:<Q1>, u64:<n>, u128:<n>, or guardians:<Q1,Q1,...>, \
+                 given in the order the contract's genesis reads deploy_params",
+            )?;
             let container = std::fs::read(path).map_err(|e| format!("read the container: {e}"))?;
+            let params = parse_deploy_params(&args[2..])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
             let meter = deploy_meter(flags);
             let (_signed, outcome, address) = Client::new(flags.gateway.clone())
-                .deploy_with_params(&seed, flags.index, &container, &[] as &[DeployParam], meter, max_fee)?;
+                .deploy_with_params(&seed, flags.index, &container, &params, meter, max_fee)?;
             println!("contract {address}");
             report_submit("deployed", outcome)
         }
         "call" => {
             if args.len() < 3 {
-                return Err("usage: qtv contract call <address> <args-hex>".to_string());
+                return Err("usage: qtv contract call <address> <args-hex> [--value <n>]".to_string());
             }
             let target = &args[1];
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
+            // A payable entry reads the transferred value the node injects at @value. Pass --value to
+            // move it and back a paid call; the node moves exactly that and the contract books no more.
             let (_signed, outcome) = Client::new(flags.gateway.clone())
-                .call(&seed, flags.index, target, call_args, flags.meter, max_fee)?;
+                .call_payable(&seed, flags.index, target, call_args, flags.value, flags.meter, max_fee)?;
             report_submit("called", outcome)
         }
         "storage" => {
@@ -306,6 +319,52 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             Ok(())
         }
         _ => Err("usage: qtv contract <deploy | call | storage>".to_string()),
+    }
+}
+
+// A deploy param is typed so the genesis reads it at the width it declared. The order here is the order
+// the contract's genesis reads deploy_params, so the caller lists them exactly as the source declares.
+fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
+    let mut params = Vec::with_capacity(args.len());
+    for arg in args {
+        let (kind, rest) = arg
+            .split_once(':')
+            .ok_or_else(|| format!("the deploy param '{arg}' is not typed, write addr:, u64:, u128:, or guardians:"))?;
+        let param = match kind {
+            "addr" => DeployParam::Address(address_payload(rest)?),
+            "u64" => DeployParam::U64(rest.parse().map_err(|_| format!("the u64 param '{rest}' is not a number"))?),
+            "u128" => DeployParam::U128(rest.parse().map_err(|_| format!("the u128 param '{rest}' is not a number"))?),
+            "guardians" => {
+                let mut gs = Vec::new();
+                for a in rest.split(',').filter(|s| !s.is_empty()) {
+                    gs.push(address_payload(a)?);
+                }
+                if gs.is_empty() {
+                    return Err("a guardians param needs at least one Q1 address".to_string());
+                }
+                DeployParam::Guardians(gs)
+            }
+            other => return Err(format!("unknown deploy param type '{other}', use addr, u64, u128, or guardians")),
+        };
+        params.push(param);
+    }
+    Ok(params)
+}
+
+fn cmd_asset(args: &[String], flags: &Flags) -> Result<(), String> {
+    match args.first().map(String::as_str).unwrap_or("") {
+        "balance" => {
+            if args.len() < 3 {
+                return Err("usage: qtv asset balance <issuer> <holder>".to_string());
+            }
+            let (issuer, holder) = (&args[1], &args[2]);
+            let balance = Client::new(flags.gateway.clone()).asset_balance(issuer, holder)?;
+            println!("issuer  {issuer}");
+            println!("holder  {holder}");
+            println!("balance {balance}");
+            Ok(())
+        }
+        _ => Err("usage: qtv asset balance <issuer> <holder>".to_string()),
     }
 }
 
@@ -382,11 +441,19 @@ fn print_usage() {
     println!("  send <to> <amount>               sign and submit a transfer");
     println!("  info                             the chain id, height, fee, and version");
     println!("  tx <tx-id>                       where a transaction is");
-    println!("  contract deploy <file>           deploy a Quanta container");
-    println!("  contract call <address> <hex>    call a contract with encoded arguments");
+    println!("  contract deploy <file> [param]   deploy a Quanta container with genesis deploy params");
+    println!("  contract call <address> <hex>    call a contract, add --value <n> for a paid entry");
     println!("  contract storage <address>       read a contract storage slots");
+    println!("  asset balance <issuer> <holder>  a holder balance of an issuer's asset");
     println!("  events <height>                  the contract events in a block");
     println!("  version                          the qtv version");
+    println!();
+    println!("deploy params");
+    println!("  addr:<Q1>            a thirty two byte address argument");
+    println!("  u64:<n>             an eight byte word argument");
+    println!("  u128:<n>            a sixteen byte wide argument");
+    println!("  guardians:<Q1,Q1>   a guardian set, comma separated");
+    println!("  list them in the order the contract's genesis reads deploy_params");
     println!();
     println!("flags");
     println!("  -g, --gateway <url>   the gateway to talk to, or QTV_GATEWAY, default {DEFAULT_GATEWAY}");
@@ -394,4 +461,5 @@ fn print_usage() {
     println!("  -i, --index <n>       the account index under one seed, default 0");
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!("      --meter <n>       the execution meter for a contract call");
+    println!("      --value <n>       the Quon a paid contract call moves, read by the entry at @value");
 }
