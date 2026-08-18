@@ -267,11 +267,8 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
     let amount: u64 = args[1].parse().map_err(|_| "the amount is not a number")?;
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
-    let client = Client::new(flags.gateway.clone());
-    let (_signed, outcome) = match &flags.asset {
-        Some(issuer) => client.transfer_asset(&seed, flags.index, to, issuer, amount, max_fee)?,
-        None => client.transfer(&seed, flags.index, to, amount, max_fee)?,
-    };
+    let (_signed, outcome) =
+        Client::new(flags.gateway.clone()).transfer(&seed, flags.index, to, amount, max_fee)?;
     report_submit("submitted", outcome)
 }
 
@@ -502,7 +499,7 @@ fn print_usage() {
     println!("  key restore <phrase>             recover a seed and address from a phrase");
     println!("  account <address>                an account balance, nonce, scheme, and key state");
     println!("  register                         register the account key so it can send");
-    println!("  send <to> <amount>               sign and submit a transfer, add --asset for a token");
+    println!("  send <to> <amount>               sign and submit a native transfer");
     println!("  info                             the chain id, height, fee, and version");
     println!("  tx <tx-id>                       where a transaction is");
     println!("  contract deploy <file> [param]   deploy a Quanta container with genesis deploy params");
@@ -527,7 +524,7 @@ fn print_usage() {
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!("      --meter <n>       the execution meter for a contract call");
     println!("      --value <n>       the Quon a paid contract call moves, read by the entry at @value");
-    println!("      --asset <issuer>  move an issuer's token instead of the native asset, for send and call");
+    println!("      --asset <issuer>  fund a contract call with an issuer's token instead of the native asset");
     println!("      --scheme-off <n>  the order scheme word offset, for contract order");
     println!("      --ptr-off <n>     the order pointer word offset, for contract order");
     println!("      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name");
