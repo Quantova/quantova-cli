@@ -32,6 +32,7 @@ struct Flags {
     max_fee_set: bool,
     meter: u64,
     value: u64,
+    asset: Option<String>,
     scheme_off: Option<u64>,
     ptr_off: Option<u64>,
     fields: Vec<String>,
@@ -78,6 +79,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         max_fee_set: false,
         meter: qcore::NATIVE_TRANSFER_METER,
         value: 0,
+        asset: None,
         scheme_off: None,
         ptr_off: None,
         fields: Vec::new(),
@@ -109,6 +111,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             "--value" => {
                 flags.value = value("--value")?.parse().map_err(|_| "the value is not a number")?
             }
+            "--asset" => flags.asset = Some(value("--asset")?),
             "--scheme-off" => {
                 flags.scheme_off = Some(value("--scheme-off")?.parse().map_err(|_| "the scheme offset is not a number")?)
             }
@@ -264,8 +267,11 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
     let amount: u64 = args[1].parse().map_err(|_| "the amount is not a number")?;
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
-    let (_signed, outcome) =
-        Client::new(flags.gateway.clone()).transfer(&seed, flags.index, to, amount, max_fee)?;
+    let client = Client::new(flags.gateway.clone());
+    let (_signed, outcome) = match &flags.asset {
+        Some(issuer) => client.transfer_asset(&seed, flags.index, to, issuer, amount, max_fee)?,
+        None => client.transfer(&seed, flags.index, to, amount, max_fee)?,
+    };
     report_submit("submitted", outcome)
 }
 
@@ -317,8 +323,11 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
-            let (_signed, outcome) = Client::new(flags.gateway.clone())
-                .call_payable(&seed, flags.index, target, call_args, flags.value, flags.meter, max_fee)?;
+            let client = Client::new(flags.gateway.clone());
+            let (_signed, outcome) = match &flags.asset {
+                Some(issuer) => client.call_asset(&seed, flags.index, target, call_args, issuer, flags.value, flags.meter, max_fee)?,
+                None => client.call_payable(&seed, flags.index, target, call_args, flags.value, flags.meter, max_fee)?,
+            };
             report_submit("called", outcome)
         }
         "order" => {
@@ -493,7 +502,7 @@ fn print_usage() {
     println!("  key restore <phrase>             recover a seed and address from a phrase");
     println!("  account <address>                an account balance, nonce, scheme, and key state");
     println!("  register                         register the account key so it can send");
-    println!("  send <to> <amount>               sign and submit a transfer");
+    println!("  send <to> <amount>               sign and submit a transfer, add --asset for a token");
     println!("  info                             the chain id, height, fee, and version");
     println!("  tx <tx-id>                       where a transaction is");
     println!("  contract deploy <file> [param]   deploy a Quanta container with genesis deploy params");
@@ -518,6 +527,7 @@ fn print_usage() {
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!("      --meter <n>       the execution meter for a contract call");
     println!("      --value <n>       the Quon a paid contract call moves, read by the entry at @value");
+    println!("      --asset <issuer>  move an issuer's token instead of the native asset, for send and call");
     println!("      --scheme-off <n>  the order scheme word offset, for contract order");
     println!("      --ptr-off <n>     the order pointer word offset, for contract order");
     println!("      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name");
