@@ -303,8 +303,6 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
-            // A payable entry reads the transferred value the node injects at @value. Pass --value to
-            // move it and back a paid call; the node moves exactly that and the contract books no more.
             let (_signed, outcome) = Client::new(flags.gateway.clone())
                 .call_payable(&seed, flags.index, target, call_args, flags.value, flags.meter, max_fee)?;
             report_submit("called", outcome)
@@ -322,8 +320,6 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
     }
 }
 
-// A deploy param is typed so the genesis reads it at the width it declared. The order here is the order
-// the contract's genesis reads deploy_params, so the caller lists them exactly as the source declares.
 fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
     let mut params = Vec::with_capacity(args.len());
     for arg in args {
