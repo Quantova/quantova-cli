@@ -341,7 +341,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let max_fee = require_max_fee(flags)?;
             let (_signed, outcome, _order) = Client::new(flags.gateway.clone()).call_typed_order(
                 &seed, flags.index, target, selector, scheme_off, ptr_off, DEFAULT_REGION_OFFSET,
-                &fields, &seed, flags.index, flags.meter, max_fee,
+                &fields, &seed, flags.index, flags.value, flags.asset.as_deref(), flags.meter, max_fee,
             )?;
             report_submit("ordered", outcome)
         }
