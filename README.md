@@ -86,13 +86,16 @@ qtv tx <tx-id>                  where a transaction is, pending, finalised, or u
 ### contracts
 
 ```
-qtv contract deploy <file>          deploy a Quanta container, print its address
+qtv contract deploy <file> [param]  deploy a Quanta container, print its address
 qtv contract call <address> <hex>   call a contract with encoded arguments
 qtv contract storage <address>      read a contract storage slots
+qtv asset balance <issuer> <holder> a holder balance of an issuer asset
 qtv events <height>                 the contract events in a block
 ```
 
-A container file is the compiled Quanta output. Encode call arguments with the [Quanta compiler](https://github.com/Quantova/Quanta-Smart-Contract-language) ABI or the QCore clients, then pass the bytes as hex. Deploy raises the execution meter above a bare transfer on its own. Set `--meter <n>` to override it.
+A container file is the compiled Quanta output. Encode call arguments with the [Quanta compiler](https://github.com/Quantova/Quanta-Smart-Contract-language) ABI or the QCore clients, then pass the bytes as hex. Arguments begin at offset eighty eight, after the call context the node owns.
+
+A contract whose genesis reads `deploy_params` takes them as typed arguments after the file, `addr:<Q1>`, `u64:<n>`, `u128:<n>`, or `guardians:<Q1,Q1>`, in the order the genesis reads them. An entry that takes a payment reads the value the node injects, so move it with `--value <n>` and the contract books exactly what moved. Deploy raises the execution meter above a bare transfer on its own. Set `--meter <n>` to override it. The [contracts guide](docs/contracts.md) carries the full call ABI.
 
 ## Flags and environment
 
@@ -102,6 +105,7 @@ A container file is the compiled Quanta output. Encode call arguments with the [
 -i, --index <n>       the account index under one seed, default 0
     --max-fee <n>     refuse to sign if the gateway fee is above this
     --meter <n>       the execution meter for a contract call
+    --value <n>       the Quon a paid contract call moves, read by the entry at the value word
 ```
 
 One seed derives many accounts by index, so `--index 1` is a second account under the same backup phrase.

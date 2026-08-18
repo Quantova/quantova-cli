@@ -34,6 +34,10 @@ Read by `qtv contract storage`. The body carries the contract address. Returns t
 
 Read by `qtv events`. The body carries the block height. Returns the contract events in the block, each with the contract, the selector, and the data.
 
+### get_asset_balance
+
+Read by `qtv asset balance`. The body carries an issuer and a holder. Returns the holder's balance of that issuer's asset, and the asset's total supply.
+
 ## Reading the wire yourself
 
 Because a request is just a POST of JSON, you can reproduce any read with a normal HTTP client. For example a node info read is a POST of an empty object.
