@@ -160,26 +160,26 @@ fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     parse_key_value(&raw)
 }
 
-fn warn_if_key_file_is_shared(path: &str) {
+fn refuse_if_key_file_is_shared(path: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(meta) = std::fs::metadata(path) {
             if meta.permissions().mode() & 0o077 != 0 {
-                eprintln!(
-                    "warning: the key file {path} is readable by group or others; restrict it with \
-                     chmod 600"
-                );
+                return Err(format!(
+                    "the key file {path} is readable by group or others, restrict it with chmod 600 before use"
+                ));
             }
         }
     }
     let _ = path;
+    Ok(())
 }
 
 fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = raw.trim();
     if let Some(path) = raw.strip_prefix('@') {
-        warn_if_key_file_is_shared(path);
+        refuse_if_key_file_is_shared(path)?;
         let body = Zeroizing::new(
             std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?,
         );
@@ -545,4 +545,36 @@ fn print_usage() {
     println!("      --scheme-off <n>  the order scheme word offset, for contract order");
     println!("      --ptr-off <n>     the order pointer word offset, for contract order");
     println!("      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name");
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn write_key(mode: u32) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("qtv_key_test_{mode}_{}", std::process::id()));
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"1111111111111111111111111111111111111111111111111111111111111111").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_group_or_other_readable_key_file_is_refused() {
+        let path = write_key(0o644);
+        let result = parse_key_value(&format!("@{}", path.display()));
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_err(), "a group or other readable key file must be refused");
+        assert!(result.unwrap_err().contains("chmod 600"));
+    }
+
+    #[test]
+    fn a_private_key_file_at_0600_is_accepted() {
+        let path = write_key(0o600);
+        let result = parse_key_value(&format!("@{}", path.display()));
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_ok(), "a private key file at 0600 must be accepted");
+    }
 }
