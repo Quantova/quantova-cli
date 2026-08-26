@@ -160,9 +160,26 @@ fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     parse_key_value(&raw)
 }
 
+fn warn_if_key_file_is_shared(path: &str) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.permissions().mode() & 0o077 != 0 {
+                eprintln!(
+                    "warning: the key file {path} is readable by group or others; restrict it with \
+                     chmod 600"
+                );
+            }
+        }
+    }
+    let _ = path;
+}
+
 fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = raw.trim();
     if let Some(path) = raw.strip_prefix('@') {
+        warn_if_key_file_is_shared(path);
         let body = Zeroizing::new(
             std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?,
         );
