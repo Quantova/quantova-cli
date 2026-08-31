@@ -463,7 +463,7 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
 fn deploy_meter(flags: &Flags) -> u64 {
     // deploy carries the whole container, so give it room above a bare transfer unless the caller set one
     if flags.meter == qcore::NATIVE_TRANSFER_METER {
-        50_000_000
+        12_000_000
     } else {
         flags.meter
     }
