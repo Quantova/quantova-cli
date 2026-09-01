@@ -20,11 +20,18 @@ The CLI covers the whole path a developer walks on a fresh chain.
 The CLI is part of the Quantova stack and builds on the QCore Rust core through a path dependency, the same way the core itself builds on the chain crates. Clone the stack repositories side by side, then build.
 
 ```
+git clone https://github.com/Quantova/Quantova-Chain
+git clone https://github.com/Quantova/QVM
 git clone https://github.com/Quantova/QCore.rs
 git clone https://github.com/Quantova/quantova-cli
 cd quantova-cli
 cargo build --release
 ```
+
+All four repositories must sit in the same parent directory, because the CLI reads QCore.rs
+by path, and QCore.rs in turn reads the account, transaction, codec and wipe crates from
+Quantova-Chain and the virtual machine from QVM. Cloning only the first two leaves cargo
+unable to find `qtv-wipe` and the build stops before it compiles anything.
 
 The binary lands at `target/release/qtv`. Put it on your path.
 
