@@ -339,8 +339,8 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let max_fee = require_max_fee(flags)?;
             let client = Client::new(flags.gateway.clone());
             let (_signed, outcome) = match &flags.asset {
-                Some(issuer) => client.call_asset(&seed, flags.index, target, call_args, issuer, flags.value, flags.meter, max_fee)?,
-                None => client.call_payable(&seed, flags.index, target, call_args, flags.value, flags.meter, max_fee)?,
+                Some(issuer) => client.call_asset(&seed, flags.index, target, call_args, issuer, flags.value, call_meter(&flags), max_fee)?,
+                None => client.call_payable(&seed, flags.index, target, call_args, flags.value, call_meter(&flags), max_fee)?,
             };
             report_submit("called", outcome)
         }
@@ -358,7 +358,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let max_fee = require_max_fee(flags)?;
             let (_signed, outcome, _order) = Client::new(flags.gateway.clone()).call_typed_order(
                 &seed, flags.index, target, selector, scheme_off, ptr_off, DEFAULT_REGION_OFFSET,
-                &fields, &seed, flags.index, flags.value, flags.asset.as_deref(), flags.meter, max_fee,
+                &fields, &seed, flags.index, flags.value, flags.asset.as_deref(), call_meter(&flags), max_fee,
             )?;
             report_submit("ordered", outcome)
         }
@@ -458,6 +458,21 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
         println!("  {} {} {}", event.contract, to_hex(&event.selector), to_hex(&event.data));
     }
     Ok(())
+}
+
+/// A contract call needs a contract sized budget. The flag defaults to the native
+/// transfer meter, which is a budget for moving coins and cannot execute a contract,
+/// so an unflagged call was charged a fee and its nonce bumped for a call that could
+/// never have succeeded.
+/// Matches the budget a deploy is given, which is the per transaction VM ceiling.
+const CONTRACT_CALL_METER: u64 = 12_000_000;
+
+fn call_meter(flags: &Flags) -> u64 {
+    if flags.meter == qcore::NATIVE_TRANSFER_METER {
+        CONTRACT_CALL_METER
+    } else {
+        flags.meter
+    }
 }
 
 fn deploy_meter(flags: &Flags) -> u64 {
