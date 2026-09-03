@@ -1,0 +1,53 @@
+# Copyright 2026 Quantova Inc
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The CLI signs and submits real transactions, so it is built against the same
+      # pinned chain and core every other consumer is built against. Pinning by full
+      # commit keeps a green run meaning something: without it the build follows
+      # whatever main happens to be, and a passing run proves nothing about the
+      # revision anybody actually ships.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: quantova-cli
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: Quantova/QCore.rs
+          ref: ef4bbae1d338d7a3a591921cbfd431ff53100c62
+          path: QCore.rs
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: Quantova/Quantova-Chain
+          ref: c7ffa043d8b56caddcdf240fb7eddd953475403b
+          path: Quantova-Chain
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: Quantova/QVM
+          ref: 069eea9a037394d058950f357f3f7adabd7bd30e
+          path: QVM
+          persist-credentials: false
+      - name: fmt
+        working-directory: quantova-cli
+        run: cargo fmt --all -- --check
+      - name: clippy
+        working-directory: quantova-cli
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: test
+        working-directory: quantova-cli
+        run: cargo test --all-features --locked

@@ -90,7 +90,9 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         let arg = &args[i];
         let mut value = |name: &str| -> Result<String, String> {
             i += 1;
-            args.get(i).cloned().ok_or_else(|| format!("{name} needs a value"))
+            args.get(i)
+                .cloned()
+                .ok_or_else(|| format!("{name} needs a value"))
         };
         match arg.as_str() {
             "--gateway" | "-g" => flags.gateway = value("--gateway")?,
@@ -99,24 +101,40 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
                 flags.key_on_argv = true;
             }
             "--index" | "-i" => {
-                flags.index = value("--index")?.parse().map_err(|_| "the index is not a number")?
+                flags.index = value("--index")?
+                    .parse()
+                    .map_err(|_| "the index is not a number")?
             }
             "--max-fee" => {
-                flags.max_fee = value("--max-fee")?.parse().map_err(|_| "the max fee is not a number")?;
+                flags.max_fee = value("--max-fee")?
+                    .parse()
+                    .map_err(|_| "the max fee is not a number")?;
                 flags.max_fee_set = true;
             }
             "--meter" => {
-                flags.meter = value("--meter")?.parse().map_err(|_| "the meter is not a number")?
+                flags.meter = value("--meter")?
+                    .parse()
+                    .map_err(|_| "the meter is not a number")?
             }
             "--value" => {
-                flags.value = value("--value")?.parse().map_err(|_| "the value is not a number")?
+                flags.value = value("--value")?
+                    .parse()
+                    .map_err(|_| "the value is not a number")?
             }
             "--asset" => flags.asset = Some(value("--asset")?),
             "--scheme-off" => {
-                flags.scheme_off = Some(value("--scheme-off")?.parse().map_err(|_| "the scheme offset is not a number")?)
+                flags.scheme_off = Some(
+                    value("--scheme-off")?
+                        .parse()
+                        .map_err(|_| "the scheme offset is not a number")?,
+                )
             }
             "--ptr-off" => {
-                flags.ptr_off = Some(value("--ptr-off")?.parse().map_err(|_| "the pointer offset is not a number")?)
+                flags.ptr_off = Some(
+                    value("--ptr-off")?
+                        .parse()
+                        .map_err(|_| "the pointer offset is not a number")?,
+                )
             }
             "--field" => flags.fields.push(value("--field")?),
             _ => rest.push(arg.clone()),
@@ -133,9 +151,11 @@ fn require_max_fee(flags: &Flags) -> Result<u128, String> {
     if flags.max_fee_set {
         Ok(flags.max_fee)
     } else {
-        Err("pass --max-fee <n>, the most Quon you will let the gateway charge in fee for this \
+        Err(
+            "pass --max-fee <n>, the most Quon you will let the gateway charge in fee for this \
              transaction, so an untrusted gateway cannot inflate the fee to drain the account"
-            .to_string())
+                .to_string(),
+        )
     }
 }
 
@@ -194,7 +214,9 @@ fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
 fn parse_seed_hex(hex: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let hex = hex.trim();
     if hex.len() != 64 {
-        return Err("a seed is sixty four hex characters, or pass a twenty four word phrase".to_string());
+        return Err(
+            "a seed is sixty four hex characters, or pass a twenty four word phrase".to_string(),
+        );
     }
     let mut seed = Zeroizing::new([0u8; 32]);
     for (i, pair) in hex.as_bytes().chunks(2).enumerate() {
@@ -214,7 +236,9 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             println!("phrase  {}", phrase.as_str());
             println!("address {}", account_address(&seed, flags.index));
             println!();
-            println!("Keep the seed and the phrase secret. The phrase is the only backup of this key.");
+            println!(
+                "Keep the seed and the phrase secret. The phrase is the only backup of this key."
+            );
             Ok(())
         }
         "address" => {
@@ -225,7 +249,10 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
         "pubkey" => {
             let seed = key_from_arg_or_flag(args.get(1), flags)?;
             println!("scheme  1");
-            println!("pubkey  {}", to_hex(&account_public_key(&seed, flags.index)));
+            println!(
+                "pubkey  {}",
+                to_hex(&account_public_key(&seed, flags.index))
+            );
             println!("address {}", account_address(&seed, flags.index));
             Ok(())
         }
@@ -245,7 +272,10 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
     }
 }
 
-fn key_from_arg_or_flag(arg: Option<&String>, flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
+fn key_from_arg_or_flag(
+    arg: Option<&String>,
+    flags: &Flags,
+) -> Result<Zeroizing<[u8; 32]>, String> {
     match arg {
         Some(value) => {
             warn_key_on_argv(value);
@@ -272,7 +302,8 @@ fn cmd_account(args: &[String], flags: &Flags) -> Result<(), String> {
 fn cmd_register(flags: &Flags) -> Result<(), String> {
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
-    let (_signed, outcome) = Client::new(flags.gateway.clone()).register(&seed, flags.index, max_fee)?;
+    let (_signed, outcome) =
+        Client::new(flags.gateway.clone()).register(&seed, flags.index, max_fee)?;
     report_submit("registered", outcome)
 }
 
@@ -331,7 +362,9 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
         }
         "call" => {
             if args.len() < 3 {
-                return Err("usage: qtv contract call <address> <args-hex> [--value <n>]".to_string());
+                return Err(
+                    "usage: qtv contract call <address> <args-hex> [--value <n>]".to_string(),
+                );
             }
             let target = &args[1];
             let call_args = from_hex(&args[2])?;
@@ -339,26 +372,62 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let max_fee = require_max_fee(flags)?;
             let client = Client::new(flags.gateway.clone());
             let (_signed, outcome) = match &flags.asset {
-                Some(issuer) => client.call_asset(&seed, flags.index, target, call_args, issuer, flags.value, call_meter(&flags), max_fee)?,
-                None => client.call_payable(&seed, flags.index, target, call_args, flags.value, call_meter(&flags), max_fee)?,
+                Some(issuer) => client.call_asset(
+                    &seed,
+                    flags.index,
+                    target,
+                    call_args,
+                    issuer,
+                    flags.value,
+                    call_meter(flags),
+                    max_fee,
+                )?,
+                None => client.call_payable(
+                    &seed,
+                    flags.index,
+                    target,
+                    call_args,
+                    flags.value,
+                    call_meter(flags),
+                    max_fee,
+                )?,
             };
             report_submit("called", outcome)
         }
         "order" => {
             if args.len() < 3 {
-                return Err("usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
-                            --ptr-off <n> --field <offset:type:value> ... --key <owner>".to_string());
+                return Err(
+                    "usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
+                            --ptr-off <n> --field <offset:type:value> ... --key <owner>"
+                        .to_string(),
+                );
             }
             let target = &args[1];
             let selector = parse_selector(&args[2])?;
-            let scheme_off = flags.scheme_off.ok_or("pass --scheme-off <n>, the order scheme word offset")?;
-            let ptr_off = flags.ptr_off.ok_or("pass --ptr-off <n>, the order pointer word offset")?;
+            let scheme_off = flags
+                .scheme_off
+                .ok_or("pass --scheme-off <n>, the order scheme word offset")?;
+            let ptr_off = flags
+                .ptr_off
+                .ok_or("pass --ptr-off <n>, the order pointer word offset")?;
             let fields = parse_order_fields(&flags.fields)?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
             let (_signed, outcome, _order) = Client::new(flags.gateway.clone()).call_typed_order(
-                &seed, flags.index, target, selector, scheme_off, ptr_off, DEFAULT_REGION_OFFSET,
-                &fields, &seed, flags.index, flags.value, flags.asset.as_deref(), call_meter(&flags), max_fee,
+                &seed,
+                flags.index,
+                target,
+                selector,
+                scheme_off,
+                ptr_off,
+                DEFAULT_REGION_OFFSET,
+                &fields,
+                &seed,
+                flags.index,
+                flags.value,
+                flags.asset.as_deref(),
+                call_meter(flags),
+                max_fee,
             )?;
             report_submit("ordered", outcome)
         }
@@ -378,13 +447,21 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
 fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
     let mut params = Vec::with_capacity(args.len());
     for arg in args {
-        let (kind, rest) = arg
-            .split_once(':')
-            .ok_or_else(|| format!("the deploy param '{arg}' is not typed, write addr:, u64:, u128:, or guardians:"))?;
+        let (kind, rest) = arg.split_once(':').ok_or_else(|| {
+            format!(
+                "the deploy param '{arg}' is not typed, write addr:, u64:, u128:, or guardians:"
+            )
+        })?;
         let param = match kind {
             "addr" => DeployParam::Address(address_payload(rest)?),
-            "u64" => DeployParam::U64(rest.parse().map_err(|_| format!("the u64 param '{rest}' is not a number"))?),
-            "u128" => DeployParam::U128(rest.parse().map_err(|_| format!("the u128 param '{rest}' is not a number"))?),
+            "u64" => DeployParam::U64(
+                rest.parse()
+                    .map_err(|_| format!("the u64 param '{rest}' is not a number"))?,
+            ),
+            "u128" => DeployParam::U128(
+                rest.parse()
+                    .map_err(|_| format!("the u128 param '{rest}' is not a number"))?,
+            ),
             "guardians" => {
                 let mut gs = Vec::new();
                 for a in rest.split(',').filter(|s| !s.is_empty()) {
@@ -395,7 +472,11 @@ fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
                 }
                 DeployParam::Guardians(gs)
             }
-            other => return Err(format!("unknown deploy param type '{other}', use addr, u64, u128, or guardians")),
+            other => {
+                return Err(format!(
+                    "unknown deploy param type '{other}', use addr, u64, u128, or guardians"
+                ))
+            }
         };
         params.push(param);
     }
@@ -404,7 +485,10 @@ fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
 
 fn parse_selector(text: &str) -> Result<[u8; 4], String> {
     let bytes = from_hex(text)?;
-    bytes.as_slice().try_into().map_err(|_| "a selector is four bytes of hex".to_string())
+    bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "a selector is four bytes of hex".to_string())
 }
 
 // An order field is offset:type:value, laid into the signed order region at the offset the entry reads.
@@ -413,16 +497,34 @@ fn parse_order_fields(specs: &[String]) -> Result<Vec<FieldArg>, String> {
     let mut fields = Vec::with_capacity(specs.len());
     for spec in specs {
         let mut parts = spec.splitn(3, ':');
-        let off = parts.next().ok_or_else(|| format!("the field '{spec}' has no offset"))?;
-        let kind = parts.next().ok_or_else(|| format!("the field '{spec}' has no type"))?;
-        let val = parts.next().ok_or_else(|| format!("the field '{spec}' has no value"))?;
-        let offset: u64 = off.parse().map_err(|_| format!("the field offset '{off}' is not a number"))?;
+        let off = parts
+            .next()
+            .ok_or_else(|| format!("the field '{spec}' has no offset"))?;
+        let kind = parts
+            .next()
+            .ok_or_else(|| format!("the field '{spec}' has no type"))?;
+        let val = parts
+            .next()
+            .ok_or_else(|| format!("the field '{spec}' has no value"))?;
+        let offset: u64 = off
+            .parse()
+            .map_err(|_| format!("the field offset '{off}' is not a number"))?;
         let value = match kind {
-            "u64" => FieldValue::Word(val.parse().map_err(|_| format!("the u64 field '{val}' is not a number"))?),
-            "u128" => FieldValue::wide(val.parse().map_err(|_| format!("the u128 field '{val}' is not a number"))?),
+            "u64" => FieldValue::Word(
+                val.parse()
+                    .map_err(|_| format!("the u64 field '{val}' is not a number"))?,
+            ),
+            "u128" => FieldValue::wide(
+                val.parse()
+                    .map_err(|_| format!("the u128 field '{val}' is not a number"))?,
+            ),
             "addr" => FieldValue::Address(address_payload(val)?),
             "name" => FieldValue::name(val),
-            other => return Err(format!("unknown field type '{other}', use u64, u128, addr, or name")),
+            other => {
+                return Err(format!(
+                    "unknown field type '{other}', use u64, u128, addr, or name"
+                ))
+            }
         };
         fields.push(FieldArg { offset, value });
     }
@@ -455,7 +557,12 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
     let events = Client::new(flags.gateway.clone()).events(height)?;
     println!("events {}", events.len());
     for event in events {
-        println!("  {} {} {}", event.contract, to_hex(&event.selector), to_hex(&event.data));
+        println!(
+            "  {} {} {}",
+            event.contract,
+            to_hex(&event.selector),
+            to_hex(&event.data)
+        );
     }
     Ok(())
 }
@@ -491,7 +598,11 @@ fn report_submit(verb: &str, outcome: Submit) -> Result<(), String> {
             println!("state    {state}");
             Ok(())
         }
-        Submit::Rejected { reason, expected, got } => {
+        Submit::Rejected {
+            reason,
+            expected,
+            got,
+        } => {
             let mut message = format!("the node rejected the transaction: {reason}");
             if let (Some(expected), Some(got)) = (expected, got) {
                 message.push_str(&format!(" (expected nonce {expected}, got {got})"));
@@ -507,7 +618,7 @@ fn to_hex(bytes: &[u8]) -> String {
 
 fn from_hex(text: &str) -> Result<Vec<u8>, String> {
     let text = text.trim().strip_prefix("0x").unwrap_or(text.trim());
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return Err("the hex has an odd length".to_string());
     }
     let mut out = Vec::with_capacity(text.len() / 2);
@@ -534,8 +645,12 @@ fn print_usage() {
     println!("  send <to> <amount>               sign and submit a native transfer");
     println!("  info                             the chain id, height, fee, and version");
     println!("  tx <tx-id>                       where a transaction is");
-    println!("  contract deploy <file> [param]   deploy a Quanta container with genesis deploy params");
-    println!("  contract call <address> <hex>    call a contract, add --value <n> for a paid entry");
+    println!(
+        "  contract deploy <file> [param]   deploy a Quanta container with genesis deploy params"
+    );
+    println!(
+        "  contract call <address> <hex>    call a contract, add --value <n> for a paid entry"
+    );
     println!("  contract order <address> <sel>   submit an owner or operator signed order");
     println!("  contract storage <address>       read a contract storage slots");
     println!("  asset balance <issuer> <holder>  a holder balance of an issuer's asset");
@@ -550,16 +665,22 @@ fn print_usage() {
     println!("  list them in the order the contract's genesis reads deploy_params");
     println!();
     println!("flags");
-    println!("  -g, --gateway <url>   the gateway to talk to, or QTV_GATEWAY, default {DEFAULT_GATEWAY}");
+    println!(
+        "  -g, --gateway <url>   the gateway to talk to, or QTV_GATEWAY, default {DEFAULT_GATEWAY}"
+    );
     println!("  -k, --key <value>     a seed hex, a phrase, or @file, or QTV_KEY");
     println!("  -i, --index <n>       the account index under one seed, default 0");
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!("      --meter <n>       the execution meter for a contract call");
-    println!("      --value <n>       the Quon a paid contract call moves, read by the entry at @value");
+    println!(
+        "      --value <n>       the Quon a paid contract call moves, read by the entry at @value"
+    );
     println!("      --asset <issuer>  fund a contract call with an issuer's token instead of the native asset");
     println!("      --scheme-off <n>  the order scheme word offset, for contract order");
     println!("      --ptr-off <n>     the order pointer word offset, for contract order");
-    println!("      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name");
+    println!(
+        "      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name"
+    );
 }
 
 #[cfg(all(test, unix))]
@@ -571,7 +692,8 @@ mod tests {
     fn write_key(mode: u32) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!("qtv_key_test_{mode}_{}", std::process::id()));
         let mut file = std::fs::File::create(&path).unwrap();
-        file.write_all(b"1111111111111111111111111111111111111111111111111111111111111111").unwrap();
+        file.write_all(b"1111111111111111111111111111111111111111111111111111111111111111")
+            .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
         path
     }
@@ -581,7 +703,10 @@ mod tests {
         let path = write_key(0o644);
         let result = parse_key_value(&format!("@{}", path.display()));
         let _ = std::fs::remove_file(&path);
-        assert!(result.is_err(), "a group or other readable key file must be refused");
+        assert!(
+            result.is_err(),
+            "a group or other readable key file must be refused"
+        );
         assert!(result.unwrap_err().contains("chmod 600"));
     }
 
@@ -590,6 +715,9 @@ mod tests {
         let path = write_key(0o600);
         let result = parse_key_value(&format!("@{}", path.display()));
         let _ = std::fs::remove_file(&path);
-        assert!(result.is_ok(), "a private key file at 0600 must be accepted");
+        assert!(
+            result.is_ok(),
+            "a private key file at 0600 must be accepted"
+        );
     }
 }
