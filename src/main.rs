@@ -214,8 +214,13 @@ fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
         let body = Zeroizing::new(
             std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?,
         );
-        return parse_key_value(&body);
+        return parse_key_text(&body);
     }
+    parse_key_text(raw)
+}
+
+fn parse_key_text(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
+    let raw = raw.trim();
     if raw.split_whitespace().count() >= 2 {
         return seed_from_mnemonic(raw);
     }
@@ -734,6 +739,18 @@ mod tests {
             "a group or other readable key file must be refused"
         );
         assert!(result.unwrap_err().contains("chmod 600"));
+    }
+
+    #[test]
+    fn a_key_file_naming_another_file_is_refused_not_followed() {
+        let path = std::env::temp_dir().join(format!("qtv_key_loop_{}", std::process::id()));
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(format!("@{}", path.display()).as_bytes())
+            .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let result = parse_key_value(&format!("@{}", path.display()));
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_err());
     }
 
     #[test]
