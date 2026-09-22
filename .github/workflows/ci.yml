@@ -15,31 +15,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # The CLI signs and submits real transactions, so it is built against the same
-      # pinned chain and core every other consumer is built against. Pinning by full
-      # commit keeps a green run meaning something: without it the build follows
-      # whatever main happens to be, and a passing run proves nothing about the
-      # revision anybody actually ships.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           path: quantova-cli
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: Quantova/QCore.rs
-          ref: main
+          ref: 9e1b3499367c7b3365825c507606538cd2d00c2b
           path: QCore.rs
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: Quantova/Quantova-Chain
-          ref: main
+          ref: 4681364131c46c33e2c84d5fc501d5acc01b2be8
           path: Quantova-Chain
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: Quantova/QVM
-          ref: main
+          ref: 62fadd4ced98c4c4eb5042391aba54dabac51431
           path: QVM
           persist-credentials: false
       - name: fmt

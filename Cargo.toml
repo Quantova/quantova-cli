@@ -16,7 +16,5 @@ name = "qtv"
 path = "src/main.rs"
 
 [dependencies]
-# The one Quantova client core. The CLI reuses its key derivation, ML-DSA-65 signing,
-# transaction building, and gateway wire rather than restating any of them.
 qcore = { path = "../QCore.rs" }
 qtv-wipe = { path = "../Quantova-Chain/crates/qtv-wipe" }

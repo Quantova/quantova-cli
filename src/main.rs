@@ -1,10 +1,6 @@
 // Copyright 2026 Quantova Inc
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-// qtv, the Quantova command line client. It reuses the qcore Rust core for key
-// derivation, ML-DSA-65 signing, transaction building, and the gateway wire, so
-// the terminal never restates a signature or a request the machine would reject.
-
 use qcore::{
     account_address, account_public_key, address_payload,
     contract::{DeployParam, FieldArg, FieldValue, DEFAULT_REGION_OFFSET},
@@ -22,7 +18,6 @@ fn main() {
     }
 }
 
-// the flags every command may carry, pulled out of the argument list so the rest are positionals
 struct Flags {
     gateway: String,
     key: Option<Zeroizing<String>>,
@@ -73,9 +68,6 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         key: std::env::var("QTV_KEY").ok().map(Zeroizing::new),
         key_on_argv: false,
         index: 0,
-        // Fail closed: with no ceiling set, a signing command refuses rather than accepting whatever
-        // fee the gateway dictates. A gateway that reports the account balance as the fee would drain
-        // it, so the ceiling is required before anything is signed.
         max_fee: 0,
         max_fee_set: false,
         meter: qcore::NATIVE_TRANSFER_METER,
@@ -147,9 +139,6 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
     Ok((flags, rest))
 }
 
-// the fee ceiling a signing command will not exceed. It has no default: a command that signs must be
-// told the most it may pay, so an untrusted gateway can never dictate an unbounded fee and drain the
-// account. A read only command never calls this.
 fn open_client(flags: &Flags) -> Result<Client, String> {
     let gateway = flags.gateway.clone();
     match flags.network.as_deref() {
@@ -191,7 +180,6 @@ fn warn_key_on_argv(raw: &str) {
     }
 }
 
-// a key is a sixty four character seed in hex, a twenty four word recovery phrase, or @path to a file holding either
 fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     let raw = flags
         .key
@@ -519,8 +507,6 @@ fn parse_selector(text: &str) -> Result<[u8; 4], String> {
         .map_err(|_| "a selector is four bytes of hex".to_string())
 }
 
-// An order field is offset:type:value, laid into the signed order region at the offset the entry reads.
-// type is u64, u128, addr for a Q1 address, or name for a bare label.
 fn parse_order_fields(specs: &[String]) -> Result<Vec<FieldArg>, String> {
     let mut fields = Vec::with_capacity(specs.len());
     for spec in specs {
@@ -595,11 +581,6 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
     Ok(())
 }
 
-/// A contract call needs a contract sized budget. The flag defaults to the native
-/// transfer meter, which is a budget for moving coins and cannot execute a contract,
-/// so an unflagged call was charged a fee and its nonce bumped for a call that could
-/// never have succeeded.
-/// Matches the budget a deploy is given, which is the per transaction VM ceiling.
 const CONTRACT_CALL_METER: u64 = 12_000_000;
 
 fn call_meter(flags: &Flags) -> u64 {
@@ -611,7 +592,6 @@ fn call_meter(flags: &Flags) -> u64 {
 }
 
 fn deploy_meter(flags: &Flags) -> u64 {
-    // deploy carries the whole container, so give it room above a bare transfer unless the caller set one
     if flags.meter == qcore::NATIVE_TRANSFER_METER {
         12_000_000
     } else {
