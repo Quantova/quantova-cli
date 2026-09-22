@@ -224,7 +224,7 @@ fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
 
 fn parse_seed_hex(hex: &str) -> Result<Zeroizing<[u8; 32]>, String> {
     let hex = hex.trim();
-    if hex.len() != 64 {
+    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(
             "a seed is sixty four hex characters, or pass a twenty four word phrase".to_string(),
         );
@@ -629,6 +629,9 @@ fn from_hex(text: &str) -> Result<Vec<u8>, String> {
     if !text.len().is_multiple_of(2) {
         return Err("the hex has an odd length".to_string());
     }
+    if !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("the value is not hex".to_string());
+    }
     let mut out = Vec::with_capacity(text.len() / 2);
     for pair in text.as_bytes().chunks(2) {
         let s = std::str::from_utf8(pair).map_err(|_| "the value is not hex")?;
@@ -692,6 +695,18 @@ fn print_usage() {
     println!(
         "      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name"
     );
+}
+
+#[cfg(test)]
+mod hex_tests {
+    use super::*;
+
+    #[test]
+    fn hex_with_a_sign_character_is_refused() {
+        assert!(from_hex("+a+b").is_err());
+        assert!(parse_seed_hex(&format!("+a{}", "b".repeat(62))).is_err());
+        assert_eq!(from_hex("0x0aff").unwrap(), vec![0x0a, 0xff]);
+    }
 }
 
 #[cfg(all(test, unix))]
