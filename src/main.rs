@@ -36,6 +36,7 @@ struct Flags {
     scheme_off: Option<u64>,
     ptr_off: Option<u64>,
     fields: Vec<String>,
+    network: Option<String>,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -83,6 +84,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         scheme_off: None,
         ptr_off: None,
         fields: Vec::new(),
+        network: None,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -137,6 +139,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
                 )
             }
             "--field" => flags.fields.push(value("--field")?),
+            "--network" => flags.network = Some(value("--network")?),
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -147,6 +150,26 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
 // the fee ceiling a signing command will not exceed. It has no default: a command that signs must be
 // told the most it may pay, so an untrusted gateway can never dictate an unbounded fee and drain the
 // account. A read only command never calls this.
+fn open_client(flags: &Flags) -> Result<Client, String> {
+    let gateway = flags.gateway.clone();
+    match flags.network.as_deref() {
+        None => Ok(Client::new(gateway)),
+        Some("testnet") => Ok(Client::with_network(
+            gateway,
+            qcore::Network::testnet(),
+            false,
+        )),
+        Some("mainnet") => Ok(Client::with_network(
+            gateway,
+            qcore::Network::mainnet(),
+            true,
+        )),
+        Some(other) => Err(format!(
+            "unknown network '{other}', use --network testnet or --network mainnet"
+        )),
+    }
+}
+
 fn require_max_fee(flags: &Flags) -> Result<u128, String> {
     if flags.max_fee_set {
         Ok(flags.max_fee)
@@ -290,7 +313,7 @@ fn cmd_account(args: &[String], flags: &Flags) -> Result<(), String> {
     if !valid_address(address) {
         return Err("the address is not a Q1 address".to_string());
     }
-    let account = Client::new(flags.gateway.clone()).account(address)?;
+    let account = open_client(flags)?.account(address)?;
     println!("address {}", account.address);
     println!("balance {}", account.balance);
     println!("nonce   {}", account.nonce);
@@ -302,8 +325,7 @@ fn cmd_account(args: &[String], flags: &Flags) -> Result<(), String> {
 fn cmd_register(flags: &Flags) -> Result<(), String> {
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
-    let (_signed, outcome) =
-        Client::new(flags.gateway.clone()).register(&seed, flags.index, max_fee)?;
+    let (_signed, outcome) = open_client(flags)?.register(&seed, flags.index, max_fee)?;
     report_submit("registered", outcome)
 }
 
@@ -316,12 +338,12 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
     let (_signed, outcome) =
-        Client::new(flags.gateway.clone()).transfer(&seed, flags.index, to, amount, max_fee)?;
+        open_client(flags)?.transfer(&seed, flags.index, to, amount, max_fee)?;
     report_submit("submitted", outcome)
 }
 
 fn cmd_info(flags: &Flags) -> Result<(), String> {
-    let info = Client::new(flags.gateway.clone()).node_info()?;
+    let info = open_client(flags)?.node_info()?;
     println!("chain   {}", info.chain_id);
     println!("genesis {}", info.genesis_hash);
     println!("height  {}", info.head_height);
@@ -332,7 +354,7 @@ fn cmd_info(flags: &Flags) -> Result<(), String> {
 
 fn cmd_tx(args: &[String], flags: &Flags) -> Result<(), String> {
     let tx_id = args.first().ok_or("usage: qtv tx <tx-id>")?;
-    match Client::new(flags.gateway.clone()).transaction(tx_id)? {
+    match open_client(flags)?.transaction(tx_id)? {
         TxStatus::Finalised { height, block } => {
             println!("finalised at height {height} in block {block}")
         }
@@ -355,8 +377,14 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
             let meter = deploy_meter(flags);
-            let (_signed, outcome, address) = Client::new(flags.gateway.clone())
-                .deploy_with_params(&seed, flags.index, &container, &params, meter, max_fee)?;
+            let (_signed, outcome, address) = open_client(flags)?.deploy_with_params(
+                &seed,
+                flags.index,
+                &container,
+                &params,
+                meter,
+                max_fee,
+            )?;
             println!("contract {address}");
             report_submit("deployed", outcome)
         }
@@ -370,7 +398,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
-            let client = Client::new(flags.gateway.clone());
+            let client = open_client(flags)?;
             let (_signed, outcome) = match &flags.asset {
                 Some(issuer) => client.call_asset(
                     &seed,
@@ -413,7 +441,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let fields = parse_order_fields(&flags.fields)?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
-            let (_signed, outcome, _order) = Client::new(flags.gateway.clone()).call_typed_order(
+            let (_signed, outcome, _order) = open_client(flags)?.call_typed_order(
                 &seed,
                 flags.index,
                 target,
@@ -433,7 +461,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
         }
         "storage" => {
             let address = args.get(1).ok_or("usage: qtv contract storage <address>")?;
-            let slots = Client::new(flags.gateway.clone()).storage(address)?;
+            let slots = open_client(flags)?.storage(address)?;
             println!("slots {}", slots.len());
             for slot in slots {
                 println!("  {} {}", to_hex(&slot.slot), slot.value);
@@ -538,7 +566,7 @@ fn cmd_asset(args: &[String], flags: &Flags) -> Result<(), String> {
                 return Err("usage: qtv asset balance <issuer> <holder>".to_string());
             }
             let (issuer, holder) = (&args[1], &args[2]);
-            let balance = Client::new(flags.gateway.clone()).asset_balance(issuer, holder)?;
+            let balance = open_client(flags)?.asset_balance(issuer, holder)?;
             println!("issuer  {issuer}");
             println!("holder  {holder}");
             println!("balance {balance}");
@@ -554,7 +582,7 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
         .ok_or("usage: qtv events <height>")?
         .parse()
         .map_err(|_| "the height is not a number")?;
-    let events = Client::new(flags.gateway.clone()).events(height)?;
+    let events = open_client(flags)?.events(height)?;
     println!("events {}", events.len());
     for event in events {
         println!(
@@ -671,6 +699,9 @@ fn print_usage() {
     println!("  -k, --key <value>     a seed hex, a phrase, or @file, or QTV_KEY");
     println!("  -i, --index <n>       the account index under one seed, default 0");
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
+    println!(
+        "      --network <name>  testnet or mainnet, required to sign for either public network"
+    );
     println!("      --meter <n>       the execution meter for a contract call");
     println!(
         "      --value <n>       the Quon a paid contract call moves, read by the entry at @value"
