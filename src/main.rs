@@ -348,9 +348,14 @@ fn cmd_info(flags: &Flags) -> Result<(), String> {
 fn cmd_tx(args: &[String], flags: &Flags) -> Result<(), String> {
     let tx_id = args.first().ok_or("usage: qtv tx <tx-id>")?;
     match open_client(flags)?.transaction(tx_id)? {
-        TxStatus::Finalised { height, block } => {
-            println!("finalised at height {height} in block {block}")
-        }
+        TxStatus::Finalised {
+            height,
+            block: Some(block),
+        } => println!("finalised at height {height} in block {block}"),
+        TxStatus::Finalised {
+            height,
+            block: None,
+        } => println!("finalised at height {height}, its block is no longer served"),
         TxStatus::Pending => println!("pending"),
         TxStatus::Unknown => println!("unknown"),
     }
