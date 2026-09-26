@@ -247,7 +247,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
         "new" => {
             let seed = generate_seed()?;
             let seed_hex = Zeroizing::new(to_hex(&seed[..]));
-            let phrase = Zeroizing::new(mnemonic_from_seed(&seed));
+            let phrase = mnemonic_from_seed(&seed);
             println!("seed    {}", seed_hex.as_str());
             println!("phrase  {}", phrase.as_str());
             println!("address {}", account_address(&seed, flags.index));
