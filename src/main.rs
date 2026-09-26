@@ -191,29 +191,32 @@ fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
     parse_key_value(&raw)
 }
 
-fn refuse_if_key_file_is_shared(path: &str) -> Result<(), String> {
+fn refuse_if_key_file_is_shared(file: &std::fs::File, path: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(path) {
-            if meta.permissions().mode() & 0o077 != 0 {
-                return Err(format!(
-                    "the key file {path} is readable by group or others, restrict it with chmod 600 before use"
-                ));
-            }
+        let meta = file
+            .metadata()
+            .map_err(|e| format!("read the key file: {e}"))?;
+        if meta.permissions().mode() & 0o077 != 0 {
+            return Err(format!(
+                "the key file {path} is readable by group or others, restrict it with chmod 600 before use"
+            ));
         }
     }
-    let _ = path;
+    let _ = (file, path);
     Ok(())
 }
 
 fn parse_key_value(raw: &str) -> Result<Zeroizing<[u8; 32]>, String> {
+    use std::io::Read;
     let raw = raw.trim();
     if let Some(path) = raw.strip_prefix('@') {
-        refuse_if_key_file_is_shared(path)?;
-        let body = Zeroizing::new(
-            std::fs::read_to_string(path).map_err(|e| format!("read the key file: {e}"))?,
-        );
+        let mut file = std::fs::File::open(path).map_err(|e| format!("read the key file: {e}"))?;
+        refuse_if_key_file_is_shared(&file, path)?;
+        let mut body = Zeroizing::new(String::new());
+        file.read_to_string(&mut body)
+            .map_err(|e| format!("read the key file: {e}"))?;
         return parse_key_text(&body);
     }
     parse_key_text(raw)
