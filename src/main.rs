@@ -377,7 +377,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let params = parse_deploy_params(&args[2..])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
-            let meter = deploy_meter(flags);
+            let meter = deploy_meter(flags, container.len());
             let (_signed, outcome, address) = open_client(flags)?.deploy_with_params(
                 &seed,
                 flags.index,
@@ -604,9 +604,12 @@ fn call_meter(flags: &Flags) -> u64 {
     }
 }
 
-fn deploy_meter(flags: &Flags) -> u64 {
+fn deploy_meter(flags: &Flags, container_bytes: usize) -> u64 {
     if flags.meter == qcore::NATIVE_TRANSFER_METER {
-        12_000_000
+        (container_bytes as u64)
+            .saturating_mul(100)
+            .saturating_add(12_000_000)
+            .min(qcore::MAX_DEPLOY_METER_LIMIT)
     } else {
         flags.meter
     }
