@@ -171,6 +171,31 @@ fn require_max_fee(flags: &Flags) -> Result<u128, String> {
     }
 }
 
+fn read_phrase(args: &[String]) -> Result<Zeroizing<String>, String> {
+    use std::io::Read;
+    if args.is_empty() {
+        let mut body = Zeroizing::new(String::new());
+        std::io::stdin()
+            .read_to_string(&mut body)
+            .map_err(|e| format!("read the phrase from stdin: {e}"))?;
+        return Ok(Zeroizing::new(body.trim().to_string()));
+    }
+    if args.len() == 1 {
+        if let Some(path) = args[0].trim().strip_prefix('@') {
+            let mut file =
+                std::fs::File::open(path).map_err(|e| format!("read the phrase file: {e}"))?;
+            refuse_if_key_file_is_shared(&file, path)?;
+            let mut body = Zeroizing::new(String::new());
+            file.read_to_string(&mut body)
+                .map_err(|e| format!("read the phrase file: {e}"))?;
+            return Ok(Zeroizing::new(body.trim().to_string()));
+        }
+    }
+    let phrase = Zeroizing::new(args.join(" "));
+    warn_key_on_argv(&phrase);
+    Ok(phrase)
+}
+
 fn warn_key_on_argv(raw: &str) {
     if !raw.trim_start().starts_with('@') {
         eprintln!(
@@ -276,11 +301,10 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             Ok(())
         }
         "restore" => {
-            let phrase = Zeroizing::new(args[1..].join(" "));
+            let phrase = read_phrase(&args[1..])?;
             if phrase.trim().is_empty() {
-                return Err("usage: qtv key restore <twenty four word phrase>".to_string());
+                return Err("usage: qtv key restore [<twenty four word phrase> | @file]; omit the phrase to read it from stdin".to_string());
             }
-            warn_key_on_argv(&phrase);
             let seed = seed_from_mnemonic(&phrase)?;
             let seed_hex = Zeroizing::new(to_hex(&seed[..]));
             println!("seed    {}", seed_hex.as_str());
