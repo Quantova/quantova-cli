@@ -630,6 +630,10 @@ const CONTRACT_CALL_METER: u64 = 12_000_000;
 
 fn call_meter(flags: &Flags) -> u64 {
     if flags.meter == qcore::NATIVE_TRANSFER_METER {
+        eprintln!(
+            "note: no --meter given, signing with the default contract meter {CONTRACT_CALL_METER}; \
+             the fee you authorise scales with the meter, so pass --meter to match the call"
+        );
         CONTRACT_CALL_METER
     } else {
         flags.meter
@@ -638,10 +642,15 @@ fn call_meter(flags: &Flags) -> u64 {
 
 fn deploy_meter(flags: &Flags, container_bytes: usize) -> u64 {
     if flags.meter == qcore::NATIVE_TRANSFER_METER {
-        (container_bytes as u64)
+        let meter = (container_bytes as u64)
             .saturating_mul(100)
             .saturating_add(12_000_000)
-            .min(qcore::MAX_DEPLOY_METER_LIMIT)
+            .min(qcore::MAX_DEPLOY_METER_LIMIT);
+        eprintln!(
+            "note: no --meter given, signing the deploy with meter {meter}; \
+             the fee you authorise scales with the meter, so pass --meter to match the deploy"
+        );
+        meter
     } else {
         flags.meter
     }
