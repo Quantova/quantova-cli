@@ -32,6 +32,7 @@ struct Flags {
     ptr_off: Option<u64>,
     fields: Vec<String>,
     network: Option<String>,
+    acknowledge_mainnet: bool,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -77,6 +78,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         ptr_off: None,
         fields: Vec::new(),
         network: None,
+        acknowledge_mainnet: false,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -132,6 +134,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             }
             "--field" => flags.fields.push(value("--field")?),
             "--network" => flags.network = Some(value("--network")?),
+            "--acknowledge-mainnet" => flags.acknowledge_mainnet = true,
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -148,11 +151,16 @@ fn open_client(flags: &Flags) -> Result<Client, String> {
             qcore::Network::testnet(),
             false,
         )),
-        Some("mainnet") => Ok(Client::with_network(
-            gateway,
-            qcore::Network::mainnet(),
-            true,
-        )),
+        Some("mainnet") => {
+            if !flags.acknowledge_mainnet {
+                return Err("signing for mainnet needs an explicit --acknowledge-mainnet alongside --network mainnet".to_string());
+            }
+            Ok(Client::with_network(
+                gateway,
+                qcore::Network::mainnet(),
+                true,
+            ))
+        }
         Some(other) => Err(format!(
             "unknown network '{other}', use --network testnet or --network mainnet"
         )),
