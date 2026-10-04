@@ -33,6 +33,7 @@ struct Flags {
     fields: Vec<String>,
     network: Option<String>,
     acknowledge_mainnet: bool,
+    insecure_argv: bool,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -79,6 +80,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         fields: Vec::new(),
         network: None,
         acknowledge_mainnet: false,
+        insecure_argv: false,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -135,6 +137,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             "--field" => flags.fields.push(value("--field")?),
             "--network" => flags.network = Some(value("--network")?),
             "--acknowledge-mainnet" => flags.acknowledge_mainnet = true,
+            "--insecure-argv" => flags.insecure_argv = true,
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -179,7 +182,7 @@ fn require_max_fee(flags: &Flags) -> Result<u128, String> {
     }
 }
 
-fn read_phrase(args: &[String]) -> Result<Zeroizing<String>, String> {
+fn read_phrase(args: &[String], insecure: bool) -> Result<Zeroizing<String>, String> {
     use std::io::Read;
     if args.is_empty() {
         let mut body = Zeroizing::new(String::new());
@@ -200,17 +203,27 @@ fn read_phrase(args: &[String]) -> Result<Zeroizing<String>, String> {
         }
     }
     let phrase = Zeroizing::new(args.join(" "));
-    warn_key_on_argv(&phrase);
+    refuse_key_on_argv(&phrase, insecure)?;
     Ok(phrase)
 }
 
-fn warn_key_on_argv(raw: &str) {
-    if !raw.trim_start().starts_with('@') {
+fn refuse_key_on_argv(raw: &str, insecure: bool) -> Result<(), String> {
+    if raw.trim_start().starts_with('@') {
+        return Ok(());
+    }
+    if insecure {
         eprintln!(
             "warning: a key on the command line is visible to other users through the process list \
-             and shell history; prefer @file or the QTV_KEY environment variable"
+             and shell history; prefer @file, stdin, or the QTV_KEY environment variable"
         );
+        return Ok(());
     }
+    Err(
+        "a key on the command line is visible to other users through the process list and shell \
+         history; pass it as @file, from stdin, or in the QTV_KEY environment variable, or repeat \
+         the command with --insecure-argv to override"
+            .to_string(),
+    )
 }
 
 fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
@@ -219,7 +232,7 @@ fn resolve_key(flags: &Flags) -> Result<Zeroizing<[u8; 32]>, String> {
         .clone()
         .ok_or("no key given, pass --key <seed-or-phrase> or set QTV_KEY")?;
     if flags.key_on_argv {
-        warn_key_on_argv(&raw);
+        refuse_key_on_argv(&raw, flags.insecure_argv)?;
     }
     parse_key_value(&raw)
 }
@@ -309,7 +322,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             Ok(())
         }
         "restore" => {
-            let phrase = read_phrase(&args[1..])?;
+            let phrase = read_phrase(&args[1..], flags.insecure_argv)?;
             if phrase.trim().is_empty() {
                 return Err("usage: qtv key restore [<twenty four word phrase> | @file]; omit the phrase to read it from stdin".to_string());
             }
@@ -329,7 +342,7 @@ fn key_from_arg_or_flag(
 ) -> Result<Zeroizing<[u8; 32]>, String> {
     match arg {
         Some(value) => {
-            warn_key_on_argv(value);
+            refuse_key_on_argv(value, flags.insecure_argv)?;
             parse_key_value(value)
         }
         None => resolve_key(flags),
@@ -737,6 +750,7 @@ fn print_usage() {
         "  -g, --gateway <url>   the gateway to talk to, or QTV_GATEWAY, default {DEFAULT_GATEWAY}"
     );
     println!("  -k, --key <value>     a seed hex, a phrase, or @file, or QTV_KEY");
+    println!("      --insecure-argv   allow a raw key on the command line (refused by default)");
     println!("  -i, --index <n>       the account index under one seed, default 0");
     println!("      --max-fee <n>     the most fee you will pay, required to sign (send, register, contract)");
     println!(
