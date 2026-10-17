@@ -3,7 +3,7 @@
 
 use qcore::{
     account_address, account_public_key, address_payload,
-    contract::{DeployParam, FieldArg, FieldValue, DEFAULT_REGION_OFFSET},
+    contract::{self, DeployParam, FieldArg, FieldValue, DEFAULT_REGION_OFFSET},
     generate_seed, mnemonic_from_seed, seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
 };
 use qtv_wipe::Zeroizing;
@@ -32,6 +32,7 @@ struct Flags {
     ptr_off: Option<u64>,
     expiry_off: Option<u64>,
     expiry: Option<u64>,
+    layout_hash: Option<String>,
     fields: Vec<String>,
     network: Option<String>,
     acknowledge_mainnet: bool,
@@ -83,6 +84,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         ptr_off: None,
         expiry_off: None,
         expiry: None,
+        layout_hash: None,
         fields: Vec::new(),
         network: None,
         acknowledge_mainnet: false,
@@ -122,6 +124,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
                 flags.expiry_off = Some(whole(&value("--expiry-off")?, "the expiry offset")?)
             }
             "--expiry" => flags.expiry = Some(whole(&value("--expiry")?, "the expiry time")?),
+            "--layout-hash" => flags.layout_hash = Some(value("--layout-hash")?),
             "--field" => flags.fields.push(value("--field")?),
             "--network" => flags.network = Some(value("--network")?),
             "--acknowledge-mainnet" => flags.acknowledge_mainnet = true,
@@ -489,7 +492,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             if args.len() < 3 {
                 return Err(
                     "usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
-                            --ptr-off <n> --expiry-off <n> [--expiry <unix seconds>] \
+                            --ptr-off <n> --expiry-off <n> --layout-hash <hex> [--expiry <unix seconds>] \
                             --field <offset:type:value> ... --key <owner>"
                         .to_string(),
                 );
@@ -505,14 +508,16 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let expiry_off = flags
                 .expiry_off
                 .ok_or("pass --expiry-off <n>, the order expiry word offset")?;
-            let expiry = match flags.expiry {
-                Some(expiry) => expiry,
-                None => std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|_| "the system clock is before 1970".to_string())?
-                    .as_secs()
-                    .saturating_add(3600),
-            };
+            let layout_hash =
+                contract::layout_hash_from_hex(flags.layout_hash.as_deref().ok_or(
+                    "pass --layout-hash <hex>, the order layout hash the contract checks",
+                )?)?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "the system clock is before 1970".to_string())?
+                .as_secs();
+            let expiry = flags.expiry.unwrap_or_else(|| now.saturating_add(3600));
+            contract::check_order_expiry(expiry, now)?;
             let fields = parse_order_fields(&flags.fields)?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
@@ -522,6 +527,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                 flags.index,
                 target,
                 selector,
+                &layout_hash,
                 scheme_off,
                 ptr_off,
                 expiry_off,
@@ -772,7 +778,10 @@ fn print_usage() {
     println!("      --scheme-off <n>  the order scheme word offset, for contract order");
     println!("      --ptr-off <n>     the order pointer word offset, for contract order");
     println!("      --expiry-off <n>  the order expiry word offset, for contract order");
-    println!("      --expiry <secs>   the unix time the order stops being valid, default one hour from now");
+    println!("      --expiry <secs>   the unix time the order stops being valid, within 24 hours, default one hour from now");
+    println!(
+        "      --layout-hash <hex>  the order layout hash the contract checks, for contract order"
+    );
     println!(
         "      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name"
     );
