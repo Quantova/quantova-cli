@@ -24,7 +24,7 @@ Arguments begin at offset one hundred and twenty. Encode them at the offsets the
 A container is the compiled Quanta output. Deploy it from the signing account. The CLI prints the contract address, which is derived from the deployer and its nonce, so you know the address before the deploy even lands.
 
 ```
-qtv contract deploy hello.qbc --key @deployer.key --max-fee 1000
+qtv contract deploy hello.qbc --key @deployer.key --meter 2420000 --max-fee 1000000
 ```
 
 A contract that reads `deploy_params` in its genesis takes those values on the command line, each typed so it lands at the width the genesis declared, in the order the genesis reads them.
@@ -32,10 +32,10 @@ A contract that reads `deploy_params` in its genesis takes those values on the c
 ```
 qtv contract deploy Dex.qbc \
   addr:Q1OPERATOR... addr:Q1TOKENA... addr:Q1TOKENB... \
-  --key @deployer.key --max-fee 1000
+  --key @deployer.key --meter 2420000 --max-fee 1000000
 ```
 
-The types are `addr:<Q1>` for a thirty two byte address, `u64:<n>` for a word, `u128:<n>` for a wide value, and `guardians:<Q1,Q1,...>` for a guardian set. Deploy carries the whole container, so the CLI raises the execution meter above a bare transfer on its own. Set `--meter <n>` to override it when a large container needs more room.
+The types are `addr:<Q1>` for a thirty two byte address, `u64:<n>` for a word, `u128:<n>` for a wide value, and `guardians:<Q1,Q1,...>` for a guardian set. Deploy carries the whole container, so size `--meter <n>` to the container. The command refuses to sign without a meter rather than picking a large one for you.
 
 ## Call
 
@@ -50,7 +50,7 @@ A meter authorises one transfer fee for every started 1210 units, so a meter of 
 An entry that takes a payment reads the value the node injects at offset eighty. Move that payment with `--value <n>`, a whole number of Quon.
 
 ```
-qtv contract call <qns-address> <register-args-hex> --value 1500 --key @me.key --max-fee 1000
+qtv contract call <qns-address> <register-args-hex> --value 1500 --key @me.key --meter 60500 --max-fee 25000
 ```
 
 The compiler binds a payable entry's asset argument to the value word, so the amount the contract books equals the value the node moved. A call whose argument claims a larger amount than `--value` carries is rejected and commits nothing. The CLI signs the call with your account key, submits it, and prints the verdict. A call that would emit an effect the node cannot settle is refused and commits nothing, so a failed call never leaves half state.

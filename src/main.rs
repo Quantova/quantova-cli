@@ -25,11 +25,13 @@ struct Flags {
     index: u64,
     max_fee: u128,
     max_fee_set: bool,
-    meter: u64,
+    meter: Option<u64>,
     value: u64,
     asset: Option<String>,
     scheme_off: Option<u64>,
     ptr_off: Option<u64>,
+    expiry_off: Option<u64>,
+    expiry: Option<u64>,
     fields: Vec<String>,
     network: Option<String>,
     acknowledge_mainnet: bool,
@@ -74,11 +76,13 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         index: 0,
         max_fee: 0,
         max_fee_set: false,
-        meter: qcore::NATIVE_TRANSFER_METER,
+        meter: None,
         value: 0,
         asset: None,
         scheme_off: None,
         ptr_off: None,
+        expiry_off: None,
+        expiry: None,
         fields: Vec::new(),
         network: None,
         acknowledge_mainnet: false,
@@ -102,42 +106,22 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
                 flags.key = Some(Zeroizing::new(value("--key")?));
                 flags.key_on_argv = true;
             }
-            "--index" | "-i" => {
-                flags.index = value("--index")?
-                    .parse()
-                    .map_err(|_| "the index is not a number")?
-            }
+            "--index" | "-i" => flags.index = whole(&value("--index")?, "the index")?,
             "--max-fee" => {
-                flags.max_fee = value("--max-fee")?
-                    .parse()
-                    .map_err(|_| "the max fee is not a number")?;
+                flags.max_fee = whole(&value("--max-fee")?, "the max fee")?;
                 flags.max_fee_set = true;
             }
-            "--meter" => {
-                flags.meter = value("--meter")?
-                    .parse()
-                    .map_err(|_| "the meter is not a number")?
-            }
-            "--value" => {
-                flags.value = value("--value")?
-                    .parse()
-                    .map_err(|_| "the value is not a number")?
-            }
+            "--meter" => flags.meter = Some(whole(&value("--meter")?, "the meter")?),
+            "--value" => flags.value = whole(&value("--value")?, "the value")?,
             "--asset" => flags.asset = Some(value("--asset")?),
             "--scheme-off" => {
-                flags.scheme_off = Some(
-                    value("--scheme-off")?
-                        .parse()
-                        .map_err(|_| "the scheme offset is not a number")?,
-                )
+                flags.scheme_off = Some(whole(&value("--scheme-off")?, "the scheme offset")?)
             }
-            "--ptr-off" => {
-                flags.ptr_off = Some(
-                    value("--ptr-off")?
-                        .parse()
-                        .map_err(|_| "the pointer offset is not a number")?,
-                )
+            "--ptr-off" => flags.ptr_off = Some(whole(&value("--ptr-off")?, "the pointer offset")?),
+            "--expiry-off" => {
+                flags.expiry_off = Some(whole(&value("--expiry-off")?, "the expiry offset")?)
             }
+            "--expiry" => flags.expiry = Some(whole(&value("--expiry")?, "the expiry time")?),
             "--field" => flags.fields.push(value("--field")?),
             "--network" => flags.network = Some(value("--network")?),
             "--acknowledge-mainnet" => flags.acknowledge_mainnet = true,
@@ -151,7 +135,31 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
     Ok((flags, rest))
 }
 
+fn whole<T: TryFrom<u128>>(text: &str, what: &str) -> Result<T, String> {
+    qcore::whole_number(text)
+        .and_then(|n| T::try_from(n).ok())
+        .ok_or_else(|| format!("{what} is not a whole number in range"))
+}
+
+fn address_book(flags: &Flags) -> Result<Vec<String>, String> {
+    let Some(path) = &flags.known else {
+        return Ok(Vec::new());
+    };
+    let book =
+        std::fs::read_to_string(path).map_err(|e| format!("read the address book {path}: {e}"))?;
+    Ok(book
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .collect())
+}
+
 fn open_client(flags: &Flags) -> Result<Client, String> {
+    open_network_client(flags)?.with_address_book(&address_book(flags)?)
+}
+
+fn open_network_client(flags: &Flags) -> Result<Client, String> {
     let gateway = flags.gateway.clone();
     match flags.network.as_deref() {
         None => Ok(Client::new(gateway)),
@@ -383,22 +391,7 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
         return Err("usage: qtv send <to> <amount> --key <seed-or-phrase>".to_string());
     }
     let to = &args[0];
-    let amount: u64 = args[1].parse().map_err(|_| "the amount is not a number")?;
-    if let Some(path) = &flags.known {
-        let book = std::fs::read_to_string(path)
-            .map_err(|e| format!("read the address book {path}: {e}"))?;
-        let known: Vec<String> = book
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty())
-            .map(str::to_string)
-            .collect();
-        if let Some(near) = qcore::lookalike_of(to, &known) {
-            return Err(format!(
-                "the recipient shares its first and last characters with {near} in your address book but is a different address, refusing to send"
-            ));
-        }
-    }
+    let amount: u64 = whole(&args[1], "the amount")?;
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
     let (_signed, outcome) =
@@ -445,7 +438,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let params = parse_deploy_params(&args[2..])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
-            let meter = deploy_meter(flags, container.len());
+            let meter = required_meter(flags, "deploy")?;
             let (_signed, outcome, address) = open_client(flags)?.deploy_with_params(
                 &seed,
                 flags.index,
@@ -467,6 +460,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
+            let meter = required_meter(flags, "call")?;
             let client = open_client(flags)?;
             let (_signed, outcome) = match &flags.asset {
                 Some(issuer) => client.call_asset(
@@ -476,7 +470,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                     call_args,
                     issuer,
                     flags.value,
-                    call_meter(flags),
+                    meter,
                     max_fee,
                 )?,
                 None => client.call_payable(
@@ -485,7 +479,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                     target,
                     call_args,
                     flags.value,
-                    call_meter(flags),
+                    meter,
                     max_fee,
                 )?,
             };
@@ -495,7 +489,8 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             if args.len() < 3 {
                 return Err(
                     "usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
-                            --ptr-off <n> --field <offset:type:value> ... --key <owner>"
+                            --ptr-off <n> --expiry-off <n> [--expiry <unix seconds>] \
+                            --field <offset:type:value> ... --key <owner>"
                         .to_string(),
                 );
             }
@@ -507,9 +502,21 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let ptr_off = flags
                 .ptr_off
                 .ok_or("pass --ptr-off <n>, the order pointer word offset")?;
+            let expiry_off = flags
+                .expiry_off
+                .ok_or("pass --expiry-off <n>, the order expiry word offset")?;
+            let expiry = match flags.expiry {
+                Some(expiry) => expiry,
+                None => std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|_| "the system clock is before 1970".to_string())?
+                    .as_secs()
+                    .saturating_add(3600),
+            };
             let fields = parse_order_fields(&flags.fields)?;
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
+            let meter = required_meter(flags, "order")?;
             let (_signed, outcome, _order) = open_client(flags)?.call_typed_order(
                 &seed,
                 flags.index,
@@ -517,13 +524,15 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                 selector,
                 scheme_off,
                 ptr_off,
+                expiry_off,
+                expiry,
                 DEFAULT_REGION_OFFSET,
                 &fields,
                 &seed,
                 flags.index,
                 flags.value,
                 flags.asset.as_deref(),
-                call_meter(flags),
+                meter,
                 max_fee,
             )?;
             report_submit("ordered", outcome)
@@ -551,14 +560,8 @@ fn parse_deploy_params(args: &[String]) -> Result<Vec<DeployParam>, String> {
         })?;
         let param = match kind {
             "addr" => DeployParam::Address(address_payload(rest)?),
-            "u64" => DeployParam::U64(
-                rest.parse()
-                    .map_err(|_| format!("the u64 param '{rest}' is not a number"))?,
-            ),
-            "u128" => DeployParam::U128(
-                rest.parse()
-                    .map_err(|_| format!("the u128 param '{rest}' is not a number"))?,
-            ),
+            "u64" => DeployParam::U64(whole(rest, &format!("the u64 param '{rest}'"))?),
+            "u128" => DeployParam::U128(whole(rest, &format!("the u128 param '{rest}'"))?),
             "guardians" => {
                 let mut gs = Vec::new();
                 for a in rest.split(',').filter(|s| !s.is_empty()) {
@@ -601,18 +604,10 @@ fn parse_order_fields(specs: &[String]) -> Result<Vec<FieldArg>, String> {
         let val = parts
             .next()
             .ok_or_else(|| format!("the field '{spec}' has no value"))?;
-        let offset: u64 = off
-            .parse()
-            .map_err(|_| format!("the field offset '{off}' is not a number"))?;
+        let offset: u64 = whole(off, &format!("the field offset '{off}'"))?;
         let value = match kind {
-            "u64" => FieldValue::Word(
-                val.parse()
-                    .map_err(|_| format!("the u64 field '{val}' is not a number"))?,
-            ),
-            "u128" => FieldValue::wide(
-                val.parse()
-                    .map_err(|_| format!("the u128 field '{val}' is not a number"))?,
-            ),
+            "u64" => FieldValue::Word(whole(val, &format!("the u64 field '{val}'"))?),
+            "u128" => FieldValue::wide(whole(val, &format!("the u128 field '{val}'"))?),
             "addr" => FieldValue::Address(address_payload(val)?),
             "name" => FieldValue::name(val),
             other => {
@@ -644,11 +639,10 @@ fn cmd_asset(args: &[String], flags: &Flags) -> Result<(), String> {
 }
 
 fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
-    let height: u64 = args
-        .first()
-        .ok_or("usage: qtv events <height>")?
-        .parse()
-        .map_err(|_| "the height is not a number")?;
+    let height: u64 = whole(
+        args.first().ok_or("usage: qtv events <height>")?,
+        "the height",
+    )?;
     let events = open_client(flags)?.events(height)?;
     println!("events {}", events.len());
     for event in events {
@@ -662,52 +656,22 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
     Ok(())
 }
 
-const CONTRACT_CALL_METER: u64 = 12_000_000;
-
 fn fee_units(meter: u64) -> u64 {
     meter.div_ceil(qcore::NATIVE_TRANSFER_METER)
 }
 
-fn call_meter(flags: &Flags) -> u64 {
-    let meter = if flags.meter == qcore::NATIVE_TRANSFER_METER {
-        eprintln!(
-            "note: no --meter given, signing with the default contract meter {CONTRACT_CALL_METER}; \
-             the fee you authorise scales with the meter, so pass --meter to match the call"
-        );
-        CONTRACT_CALL_METER
-    } else {
-        flags.meter
-    };
+fn required_meter(flags: &Flags, what: &str) -> Result<u64, String> {
+    let meter = flags.meter.ok_or_else(|| {
+        format!(
+            "pass --meter <n>, the execution meter for this {what}; the fee you authorise is one transfer fee for every {} meter, so size it to the {what} rather than signing a large default",
+            qcore::NATIVE_TRANSFER_METER
+        )
+    })?;
     eprintln!(
         "meter {meter} authorises a fee of up to {} transfer fees",
         fee_units(meter)
     );
-    meter
-}
-
-fn deploy_meter(flags: &Flags, container_bytes: usize) -> u64 {
-    if flags.meter == qcore::NATIVE_TRANSFER_METER {
-        let meter = (container_bytes as u64)
-            .saturating_mul(100)
-            .saturating_add(12_000_000)
-            .min(qcore::MAX_DEPLOY_METER_LIMIT);
-        eprintln!(
-            "note: no --meter given, signing the deploy with meter {meter}; \
-             the fee you authorise scales with the meter, so pass --meter to match the deploy"
-        );
-        eprintln!(
-            "meter {meter} authorises a fee of up to {} transfer fees",
-            fee_units(meter)
-        );
-        meter
-    } else {
-        eprintln!(
-            "meter {} authorises a fee of up to {} transfer fees",
-            flags.meter,
-            fee_units(flags.meter)
-        );
-        flags.meter
-    }
+    Ok(meter)
 }
 
 fn report_submit(verb: &str, outcome: Submit) -> Result<(), String> {
@@ -797,13 +761,18 @@ fn print_usage() {
     println!(
         "      --network <name>  testnet or mainnet, required to sign for either public network"
     );
-    println!("      --meter <n>       the execution meter for a contract call");
+    println!(
+        "      --meter <n>       the execution meter, required for contract deploy, call and order"
+    );
+    println!("      --known <file>    an address book, one Q1 address per line, a lookalike recipient is refused");
     println!(
         "      --value <n>       the Quon a paid contract call moves, read by the entry at @value"
     );
     println!("      --asset <issuer>  fund a contract call with an issuer's token instead of the native asset");
     println!("      --scheme-off <n>  the order scheme word offset, for contract order");
     println!("      --ptr-off <n>     the order pointer word offset, for contract order");
+    println!("      --expiry-off <n>  the order expiry word offset, for contract order");
+    println!("      --expiry <secs>   the unix time the order stops being valid, default one hour from now");
     println!(
         "      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name"
     );
@@ -818,6 +787,18 @@ mod hex_tests {
         assert!(from_hex("+a+b").is_err());
         assert!(parse_seed_hex(&format!("+a{}", "b".repeat(62))).is_err());
         assert_eq!(from_hex("0x0aff").unwrap(), vec![0x0a, 0xff]);
+        assert!(whole::<u64>("+5", "x").is_err());
+        assert!(whole::<u64>(" 5", "x").is_err());
+        assert_eq!(whole::<u64>("5", "x"), Ok(5));
+    }
+
+    #[test]
+    fn a_contract_call_without_a_meter_is_refused_rather_than_defaulted() {
+        let (flags, _) = parse_flags(&[]).unwrap();
+        let refused = required_meter(&flags, "call").unwrap_err();
+        assert!(refused.contains("--meter"), "{refused}");
+        let (flags, _) = parse_flags(&["--meter".to_string(), "60500".to_string()]).unwrap();
+        assert_eq!(required_meter(&flags, "call").unwrap(), 60_500);
     }
 }
 

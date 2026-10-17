@@ -103,7 +103,7 @@ qtv events <height>                 the contract events in a block
 
 A container file is the compiled Quanta output. Encode call arguments with the [Quanta compiler](https://github.com/Quantova/Quanta-Smart-Contract-language) ABI or the QCore clients, then pass the bytes as hex. Arguments begin at offset eighty eight, after the call context the node owns.
 
-A contract whose genesis reads `deploy_params` takes them as typed arguments after the file, `addr:<Q1>`, `u64:<n>`, `u128:<n>`, or `guardians:<Q1,Q1>`, in the order the genesis reads them. An entry that takes a payment reads the value the node injects, so move it with `--value <n>` and the contract books exactly what moved. Deploy raises the execution meter above a bare transfer on its own. Set `--meter <n>` to override it. The [contracts guide](docs/contracts.md) carries the full call ABI.
+A contract whose genesis reads `deploy_params` takes them as typed arguments after the file, `addr:<Q1>`, `u64:<n>`, `u128:<n>`, or `guardians:<Q1,Q1>`, in the order the genesis reads them. An entry that takes a payment reads the value the node injects, so move it with `--value <n>` and the contract books exactly what moved. Deploy, call and order each require `--meter <n>`, the execution budget you authorise, and print how many transfer fees it allows before signing. The [contracts guide](docs/contracts.md) carries the full call ABI.
 
 ## Flags and environment
 
@@ -112,8 +112,8 @@ A contract whose genesis reads `deploy_params` takes them as typed arguments aft
 -k, --key <value>     a seed hex, a phrase, or @file, or QTV_KEY
 -i, --index <n>       the account index under one seed, default 0
     --max-fee <n>     refuse to sign if the gateway fee is above this
-    --meter <n>       the execution meter for a contract call
-    --known <file>    an address book, one Q1 per line; send refuses a recipient that only looks like one of them
+    --meter <n>       the execution meter, required for contract deploy, call and order
+    --known <file>    an address book, one Q1 per line, and a signing command refuses a target that only looks like one of them
     --value <n>       the Quon a paid contract call moves, read by the entry at the value word
 ```
 
