@@ -49,5 +49,5 @@ jobs:
       - name: deny
         working-directory: quantova-cli
         run: |
-          cargo install cargo-deny --locked --version 0.16.3
-          cargo deny check bans licenses sources advisories
+          cargo install cargo-deny --locked --version 0.19.9
+          cargo deny --locked check bans licenses sources advisories

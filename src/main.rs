@@ -4,8 +4,7 @@
 use qcore::{
     account_address, account_public_key, address_payload,
     contract::{DeployParam, FieldArg, FieldValue, DEFAULT_REGION_OFFSET},
-    generate_seed, mnemonic_from_seed, seed_from_mnemonic,
-    valid_address, Client, Submit, TxStatus,
+    generate_seed, mnemonic_from_seed, seed_from_mnemonic, valid_address, Client, Submit, TxStatus,
 };
 use qtv_wipe::Zeroizing;
 
