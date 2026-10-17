@@ -17,4 +17,4 @@ path = "src/main.rs"
 
 [dependencies]
 qcore = { path = "../QCore.rs" }
-qtv-wipe = { git = "https://github.com/Quantova/Quantova-Chain.git", rev = "3ed57775e1171f870e0236d8d605e07b6dc03761" }
+qtv-wipe = { git = "https://github.com/Quantova/Quantova-Chain.git", rev = "90ed5c76ec3022f4ba4c8d5881c744082a960e98" }
