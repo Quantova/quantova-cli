@@ -74,10 +74,9 @@ qtv key new                     create an account, print its seed, phrase, and a
 qtv key address [<key>]         the address for a key and index
 qtv key pubkey  [<key>]         the scheme, public key, and address, for a genesis file
 qtv key restore <phrase>        recover a seed and address from a phrase
-qtv key restore-legacy <phrase> recover a twenty four word phrase from an earlier release
 ```
 
-A `<key>` argument is a seed in hex, a twenty five word phrase in quotes, or `@path` to a file that holds either. When you leave it out the CLI reads `--key` or `QTV_KEY`. A twenty four word phrase from an earlier release is refused there with an error that names it. Restore it once with `qtv key restore-legacy`, which prints the twenty five word phrase to back up in its place.
+A `<key>` argument is a seed in hex, a twenty five word phrase in quotes, or `@path` to a file that holds either. When you leave it out the CLI reads `--key` or `QTV_KEY`.
 
 ### account and transactions
 

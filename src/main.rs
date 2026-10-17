@@ -4,7 +4,7 @@
 use qcore::{
     account_address, account_public_key, address_payload,
     contract::{DeployParam, FieldArg, FieldValue, DEFAULT_REGION_OFFSET},
-    generate_seed, mnemonic_from_seed, seed_from_legacy_mnemonic, seed_from_mnemonic,
+    generate_seed, mnemonic_from_seed, seed_from_mnemonic,
     valid_address, Client, Submit, TxStatus,
 };
 use qtv_wipe::Zeroizing;
@@ -333,22 +333,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             println!("address {}", account_address(&seed, flags.index));
             Ok(())
         }
-        "restore-legacy" => {
-            let phrase = read_phrase(&args[1..], flags.insecure_argv)?;
-            if phrase.trim().is_empty() {
-                return Err("usage: qtv key restore-legacy [<twenty four word phrase> | @file]; omit the phrase to read it from stdin".to_string());
-            }
-            let seed = seed_from_legacy_mnemonic(&phrase)?;
-            let seed_hex = Zeroizing::new(to_hex(&seed[..]));
-            let current = mnemonic_from_seed(&seed);
-            println!("seed    {}", seed_hex.as_str());
-            println!("phrase  {}", current.as_str());
-            println!("address {}", account_address(&seed, flags.index));
-            println!();
-            println!("Back up this twenty five word phrase. It replaces the twenty four word phrase as the backup of this key.");
-            Ok(())
-        }
-        _ => Err("usage: qtv key <new | address | pubkey | restore | restore-legacy>".to_string()),
+        _ => Err("usage: qtv key <new | address | pubkey | restore>".to_string()),
     }
 }
 
@@ -737,7 +722,6 @@ fn print_usage() {
     println!("  key address [<key>]              the address for a key and index");
     println!("  key pubkey  [<key>]              the scheme, public key, and address, for genesis");
     println!("  key restore <phrase>             recover a seed and address from a phrase");
-    println!("  key restore-legacy <phrase>      recover a twenty four word phrase from an earlier release");
     println!("  account <address>                an account balance, nonce, scheme, and key state");
     println!("  register                         register the account key so it can send");
     println!("  send <to> <amount>               sign and submit a native transfer");
