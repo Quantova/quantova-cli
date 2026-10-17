@@ -8,7 +8,7 @@ The binary is named `qtv`. It is a thin layer over [QCore.rs](https://github.com
 
 The CLI covers the whole path a developer walks on a fresh chain.
 
-- Make an account offline, back it up as a twenty four word phrase, and derive its address.
+- Make an account offline, back it up as a twenty five word phrase, and derive its address.
 - Read an account balance, nonce, and key state from a node.
 - Register the account key so the account can sign.
 - Sign and submit a native transfer, with a fee ceiling that refuses an inflated gateway fee.
@@ -53,7 +53,7 @@ qtv key new
 `qtv key new` prints a seed, a phrase, and an address. Keep the seed and the phrase secret. Fund the address from a faucet or a funded account, then register the key and send.
 
 ```
-export QTV_KEY="the twenty four word phrase you just saved"
+export QTV_KEY="the twenty five word phrase you just saved"
 
 qtv register
 qtv account Q1U94GM6GYCCLREFF4HYDP04DKFD726WG3GTPRZW5A3UUC2YJ0373QLT9YNL
@@ -74,9 +74,10 @@ qtv key new                     create an account, print its seed, phrase, and a
 qtv key address [<key>]         the address for a key and index
 qtv key pubkey  [<key>]         the scheme, public key, and address, for a genesis file
 qtv key restore <phrase>        recover a seed and address from a phrase
+qtv key restore-legacy <phrase> recover a twenty four word phrase from an earlier release
 ```
 
-A `<key>` argument is a seed in hex, a twenty four word phrase in quotes, or `@path` to a file that holds either. When you leave it out the CLI reads `--key` or `QTV_KEY`.
+A `<key>` argument is a seed in hex, a twenty five word phrase in quotes, or `@path` to a file that holds either. When you leave it out the CLI reads `--key` or `QTV_KEY`. A twenty four word phrase from an earlier release is refused there with an error that names it. Restore it once with `qtv key restore-legacy`, which prints the twenty five word phrase to back up in its place.
 
 ### account and transactions
 
