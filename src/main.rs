@@ -34,6 +34,8 @@ struct Flags {
     network: Option<String>,
     acknowledge_mainnet: bool,
     insecure_argv: bool,
+    show_seed: bool,
+    known: Option<String>,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -81,6 +83,8 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         network: None,
         acknowledge_mainnet: false,
         insecure_argv: false,
+        show_seed: false,
+        known: None,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -138,6 +142,8 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             "--network" => flags.network = Some(value("--network")?),
             "--acknowledge-mainnet" => flags.acknowledge_mainnet = true,
             "--insecure-argv" => flags.insecure_argv = true,
+            "--show-seed" => flags.show_seed = true,
+            "--known" => flags.known = Some(value("--known")?),
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -327,8 +333,10 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
                 return Err("usage: qtv key restore [<twenty five word phrase> | @file]; omit the phrase to read it from stdin".to_string());
             }
             let seed = seed_from_mnemonic(&phrase)?;
-            let seed_hex = Zeroizing::new(to_hex(&seed[..]));
-            println!("seed    {}", seed_hex.as_str());
+            if flags.show_seed {
+                let seed_hex = Zeroizing::new(to_hex(&seed[..]));
+                println!("seed    {}", seed_hex.as_str());
+            }
             println!("address {}", account_address(&seed, flags.index));
             Ok(())
         }
@@ -376,6 +384,21 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
     }
     let to = &args[0];
     let amount: u64 = args[1].parse().map_err(|_| "the amount is not a number")?;
+    if let Some(path) = &flags.known {
+        let book = std::fs::read_to_string(path)
+            .map_err(|e| format!("read the address book {path}: {e}"))?;
+        let known: Vec<String> = book
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        if let Some(near) = qcore::lookalike_of(to, &known) {
+            return Err(format!(
+                "the recipient shares its first and last characters with {near} in your address book but is a different address, refusing to send"
+            ));
+        }
+    }
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
     let (_signed, outcome) =
@@ -641,8 +664,12 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
 
 const CONTRACT_CALL_METER: u64 = 12_000_000;
 
+fn fee_units(meter: u64) -> u64 {
+    meter.div_ceil(qcore::NATIVE_TRANSFER_METER)
+}
+
 fn call_meter(flags: &Flags) -> u64 {
-    if flags.meter == qcore::NATIVE_TRANSFER_METER {
+    let meter = if flags.meter == qcore::NATIVE_TRANSFER_METER {
         eprintln!(
             "note: no --meter given, signing with the default contract meter {CONTRACT_CALL_METER}; \
              the fee you authorise scales with the meter, so pass --meter to match the call"
@@ -650,7 +677,12 @@ fn call_meter(flags: &Flags) -> u64 {
         CONTRACT_CALL_METER
     } else {
         flags.meter
-    }
+    };
+    eprintln!(
+        "meter {meter} authorises a fee of up to {} transfer fees",
+        fee_units(meter)
+    );
+    meter
 }
 
 fn deploy_meter(flags: &Flags, container_bytes: usize) -> u64 {
@@ -663,8 +695,17 @@ fn deploy_meter(flags: &Flags, container_bytes: usize) -> u64 {
             "note: no --meter given, signing the deploy with meter {meter}; \
              the fee you authorise scales with the meter, so pass --meter to match the deploy"
         );
+        eprintln!(
+            "meter {meter} authorises a fee of up to {} transfer fees",
+            fee_units(meter)
+        );
         meter
     } else {
+        eprintln!(
+            "meter {} authorises a fee of up to {} transfer fees",
+            flags.meter,
+            fee_units(flags.meter)
+        );
         flags.meter
     }
 }

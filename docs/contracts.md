@@ -4,7 +4,7 @@ Quantova runs contracts on the QVM, a register machine. A contract is written in
 
 ## The call ABI
 
-A call is a four byte selector followed by a memory image. The node owns the first eighty eight bytes of that image, the call context, and overwrites them on every call. A caller can never set them, so a contract trusts them absolutely.
+A call is a four byte selector followed by a memory image. The node owns the first one hundred and twenty bytes of that image, the call context, and overwrites them on every call. A caller can never set them, so a contract trusts them absolutely.
 
 ```
 offset  width  meaning
@@ -13,10 +13,11 @@ offset  width  meaning
 64      8      time, the block time in seconds
 72      8      chain, the node's chain identity
 80      8      value, the native Quon this call moved
-88      ...    the entry arguments, laid out to the contract ABI
+88      32     asset, the issuer of the asset this call paid in, zero for a native call
+120     ...    the entry arguments, laid out to the contract ABI
 ```
 
-Arguments begin at offset eighty eight. Encode them at the offsets the [Quanta compiler](https://github.com/Quantova/Quanta-Smart-Contract-language) reports for the entry, or let a QCore client build the image, then pass the bytes as hex. The chain word stops an order signed for one chain from verifying on another. The value word is the payment the node actually moved, so a paid entry books exactly what changed hands and can never be told by attacker chosen calldata that it was paid more than it was.
+Arguments begin at offset one hundred and twenty. Encode them at the offsets the [Quanta compiler](https://github.com/Quantova/Quanta-Smart-Contract-language) reports for the entry, or let a QCore client build the image, then pass the bytes as hex. The chain word stops an order signed for one chain from verifying on another. The value word is the payment the node actually moved, so a paid entry books exactly what changed hands and can never be told by attacker chosen calldata that it was paid more than it was.
 
 ## Deploy
 
@@ -41,8 +42,10 @@ The types are `addr:<Q1>` for a thirty two byte address, `u64:<n>` for a word, `
 A call sends a selector and its encoded arguments to a contract. The selector is the first four bytes, the rest are the arguments the entry expects at their ABI offsets. Build the bytes with the compiler ABI or a QCore client, then pass them as hex.
 
 ```
-qtv contract call <address> 0a1b2c3d... --key @me.key --max-fee 1000 --meter 2000000
+qtv contract call <address> 0a1b2c3d... --key @me.key --meter 60500 --max-fee 25000
 ```
+
+A meter authorises one transfer fee for every started 1210 units, so a meter of 60500 allows up to fifty transfer fees and `--max-fee` must cover that at the fee the gateway reports. The CLI prints the number of transfer fees a meter authorises before it signs.
 
 An entry that takes a payment reads the value the node injects at offset eighty. Move that payment with `--value <n>`, a whole number of Quon.
 

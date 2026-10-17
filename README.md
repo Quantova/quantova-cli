@@ -53,7 +53,8 @@ qtv key new
 `qtv key new` prints a seed, a phrase, and an address. Keep the seed and the phrase secret. Fund the address from a faucet or a funded account, then register the key and send.
 
 ```
-export QTV_KEY="the twenty five word phrase you just saved"
+(umask 077 && read -rs PHRASE && printf '%s\n' "$PHRASE" > account.key)
+export QTV_KEY=@account.key
 
 qtv register
 qtv account Q1U94GM6GYCCLREFF4HYDP04DKFD726WG3GTPRZW5A3UUC2YJ0373QLT9YNL
@@ -73,7 +74,7 @@ Account and key work that runs offline. No gateway is contacted.
 qtv key new                     create an account, print its seed, phrase, and address
 qtv key address [<key>]         the address for a key and index
 qtv key pubkey  [<key>]         the scheme, public key, and address, for a genesis file
-qtv key restore <phrase>        recover a seed and address from a phrase
+qtv key restore <phrase>        recover the address from a phrase, add --show-seed to print the seed
 ```
 
 A `<key>` argument is a seed in hex, a twenty five word phrase in quotes, or `@path` to a file that holds either. When you leave it out the CLI reads `--key` or `QTV_KEY`.
@@ -112,6 +113,7 @@ A contract whose genesis reads `deploy_params` takes them as typed arguments aft
 -i, --index <n>       the account index under one seed, default 0
     --max-fee <n>     refuse to sign if the gateway fee is above this
     --meter <n>       the execution meter for a contract call
+    --known <file>    an address book, one Q1 per line; send refuses a recipient that only looks like one of them
     --value <n>       the Quon a paid contract call moves, read by the entry at the value word
 ```
 

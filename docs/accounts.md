@@ -11,13 +11,13 @@ Quantova signs with ML-DSA-65, the module lattice signature standardised by NIST
 An account starts from a thirty two byte seed. The CLI draws it from the platform random source under `qtv key new`. From the seed the CLI shows two things a developer keeps.
 
 - The seed in hex, sixty four characters, the raw secret.
-- A twenty four word recovery phrase, the only backup a human should write down.
+- A twenty five word recovery phrase, the only backup a human should write down.
 
-The phrase encodes the same seed plus a checksum, so a single typo is caught on restore rather than resolving to a silent wrong account. Recover with `qtv key restore`.
+The phrase encodes the same seed plus a checksum, so a single typo is caught on restore rather than resolving to a silent wrong account. Recover with `qtv key restore`, which reads the phrase from a file or standard input and prints the address. Add `--show-seed` to print the seed as well.
 
 ```
 qtv key new
-qtv key restore "the twenty four words"
+qtv key restore < phrase.txt
 ```
 
 ## Derivation and the index

@@ -27,11 +27,12 @@ The signing key is needed by any command that signs, which is register, send, an
 A key value takes three forms.
 
 - A seed in hex, sixty four characters.
-- A twenty four word recovery phrase, in quotes.
+- A twenty five word recovery phrase, in quotes.
 - `@path`, a file that holds either a seed or a phrase.
 
 ```
-export QTV_KEY="the twenty four words"
+(umask 077 && read -rs PHRASE && printf '%s\n' "$PHRASE" > account.key)
+export QTV_KEY=@account.key
 qtv register
 
 qtv send Q1... 1000000 --key @account.key
@@ -58,7 +59,7 @@ A working shell for a testnet session.
 
 ```
 export QTV_GATEWAY=http://127.0.0.1:40404
-export QTV_KEY="your twenty four word phrase"
+export QTV_KEY=@account.key
 
 qtv info
 qtv account "$(qtv key address)"
