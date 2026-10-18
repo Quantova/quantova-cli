@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "qcore"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "qtv-account",
  "qtv-attest",
@@ -116,7 +116,7 @@ source = "git+https://github.com/Quantova/Quantova-Chain.git?rev=6f8ffb8c6eb52fb
 
 [[package]]
 name = "quantova-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "qcore",
  "qtv-wipe",
