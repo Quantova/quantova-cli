@@ -169,21 +169,42 @@ fn address_book(flags: &Flags) -> Result<Vec<String>, String> {
         .collect())
 }
 
+fn genesis_flag(flags: &Flags) -> Result<Option<[u8; 32]>, String> {
+    match flags.genesis.as_deref() {
+        None => Ok(None),
+        Some(hex) => qcore::json::from_hex(hex)?
+            .try_into()
+            .map(Some)
+            .map_err(|_| "the genesis hash must be 32 bytes of hex".to_string()),
+    }
+}
+
 fn open_client(flags: &Flags) -> Result<Client, String> {
     let client = open_network_client(flags)?.with_address_book(&address_book(flags)?)?;
     if let Some(path) = &flags.roster {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("read the validator roster {path}: {e}"))?;
-        let genesis = flags
-            .genesis
-            .as_deref()
-            .ok_or("a trusted roster needs the genesis hash it belongs to, pass --genesis <64 hex characters>")?;
-        let genesis: [u8; 32] = qcore::json::from_hex(genesis)?
-            .try_into()
-            .map_err(|_| "the genesis hash must be 32 bytes of hex".to_string())?;
+        let genesis = genesis_flag(flags)?.ok_or(
+            "a trusted roster needs the genesis hash it belongs to, pass --genesis <64 hex characters>",
+        )?;
         client.trust_roster(genesis, qcore::finality::parse_roster(&text)?)?;
     }
     Ok(client)
+}
+
+fn pinned(mut network: qcore::Network, flags: &Flags) -> Result<qcore::Network, String> {
+    if let Some(genesis) = genesis_flag(flags)? {
+        match network.genesis_hash {
+            Some(known) if known != genesis => {
+                return Err(
+                    "the --genesis hash differs from the genesis this release pins for the network"
+                        .to_string(),
+                )
+            }
+            _ => network.genesis_hash = Some(genesis),
+        }
+    }
+    Ok(network)
 }
 
 fn open_network_client(flags: &Flags) -> Result<Client, String> {
@@ -192,7 +213,7 @@ fn open_network_client(flags: &Flags) -> Result<Client, String> {
         None => Ok(Client::new(gateway)),
         Some("testnet") => Ok(Client::with_network(
             gateway,
-            qcore::Network::testnet(),
+            pinned(qcore::Network::testnet(), flags)?,
             false,
         )),
         Some("mainnet") => {
@@ -201,7 +222,7 @@ fn open_network_client(flags: &Flags) -> Result<Client, String> {
             }
             Ok(Client::with_network(
                 gateway,
-                qcore::Network::mainnet(),
+                pinned(qcore::Network::mainnet(), flags)?,
                 true,
             ))
         }
@@ -798,7 +819,7 @@ fn print_usage() {
     );
     println!("      --known <file>    an address book, one Q1 address per line, a lookalike recipient is refused");
     println!("      --roster <file>   a validator roster you trust, the head is then checked against its finality proof before signing, required on mainnet");
-    println!("      --genesis <hex>   the genesis hash the trusted roster belongs to, required with --roster");
+    println!("      --genesis <hex>   the network genesis hash to sign under and the one the trusted roster belongs to");
     println!(
         "      --value <n>       the Quon a paid contract call moves, read by the entry at @value"
     );

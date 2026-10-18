@@ -3,7 +3,7 @@
 
 [package]
 name = "quantova-cli"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 description = "The Quantova command line client. A terminal tool for post quantum accounts, signed transactions, contract deploy and call, and node queries over the Quantova gateway, built on the QCore Rust core so no signing or wire is ever hand rolled."
@@ -17,4 +17,4 @@ path = "src/main.rs"
 
 [dependencies]
 qcore = { path = "../QCore.rs" }
-qtv-wipe = { git = "https://github.com/Quantova/Quantova-Chain.git", rev = "2bc396ad5dd0bc9f57670b0c8f4b5786c9824325" }
+qtv-wipe = { git = "https://github.com/Quantova/Quantova-Chain.git", rev = "fca2d70dcd5c20a44bd1261dfb02faacba3bfcdd" }

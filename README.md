@@ -115,7 +115,7 @@ A contract whose genesis reads `deploy_params` takes them as typed arguments aft
     --meter <n>       the execution meter, required for contract deploy, call and order
     --known <file>    an address book, one Q1 per line, and a signing command refuses a target that only looks like one of them
     --roster <file>   a validator roster you trust, the head is checked against its finality proof before signing, required on mainnet
-    --genesis <hex>   the genesis hash the trusted roster belongs to, required with --roster
+    --genesis <hex>   the network genesis hash to sign under and the one the trusted roster belongs to
     --value <n>       the Quon a paid contract call moves, read by the entry at the value word
 ```
 
