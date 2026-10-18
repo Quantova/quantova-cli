@@ -33,6 +33,7 @@ struct Flags {
     expiry_off: Option<u64>,
     expiry: Option<u64>,
     layout_hash: Option<String>,
+    order_nonce: Option<u64>,
     fields: Vec<String>,
     network: Option<String>,
     acknowledge_mainnet: bool,
@@ -85,6 +86,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         expiry_off: None,
         expiry: None,
         layout_hash: None,
+        order_nonce: None,
         fields: Vec::new(),
         network: None,
         acknowledge_mainnet: false,
@@ -125,6 +127,9 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             }
             "--expiry" => flags.expiry = Some(whole(&value("--expiry")?, "the expiry time")?),
             "--layout-hash" => flags.layout_hash = Some(value("--layout-hash")?),
+            "--order-nonce" => {
+                flags.order_nonce = Some(whole(&value("--order-nonce")?, "the order nonce")?)
+            }
             "--field" => flags.fields.push(value("--field")?),
             "--network" => flags.network = Some(value("--network")?),
             "--acknowledge-mainnet" => flags.acknowledge_mainnet = true,
@@ -492,7 +497,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             if args.len() < 3 {
                 return Err(
                     "usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
-                            --ptr-off <n> --expiry-off <n> --layout-hash <hex> [--expiry <unix seconds>] \
+                            --ptr-off <n> --expiry-off <n> --layout-hash <hex> [--order-nonce <n>] [--expiry <unix seconds>] \
                             --field <offset:type:value> ... --key <owner>"
                         .to_string(),
                 );
@@ -522,7 +527,7 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             let seed = resolve_key(flags)?;
             let max_fee = require_max_fee(flags)?;
             let meter = required_meter(flags, "order")?;
-            let (_signed, outcome, _order) = open_client(flags)?.call_typed_order(
+            let (_signed, outcome, _order) = open_client(flags)?.call_typed_order_expecting(
                 &seed,
                 flags.index,
                 target,
@@ -540,6 +545,8 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                 flags.asset.as_deref(),
                 meter,
                 max_fee,
+                None,
+                flags.order_nonce,
             )?;
             report_submit("ordered", outcome)
         }
@@ -781,6 +788,9 @@ fn print_usage() {
     println!("      --expiry <secs>   the unix time the order stops being valid, within 24 hours, default one hour from now");
     println!(
         "      --layout-hash <hex>  the order layout hash the contract checks, for contract order"
+    );
+    println!(
+        "      --order-nonce <n>    the order nonce the contract expects next, needed once it is above zero"
     );
     println!(
         "      --field <o:t:v>   an order field, offset:type:value, type u64 u128 addr or name"
