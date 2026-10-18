@@ -41,6 +41,7 @@ struct Flags {
     show_seed: bool,
     known: Option<String>,
     roster: Option<String>,
+    genesis: Option<String>,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -95,6 +96,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         show_seed: false,
         known: None,
         roster: None,
+        genesis: None,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -139,6 +141,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             "--show-seed" => flags.show_seed = true,
             "--known" => flags.known = Some(value("--known")?),
             "--roster" => flags.roster = Some(value("--roster")?),
+            "--genesis" => flags.genesis = Some(value("--genesis")?),
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -171,7 +174,14 @@ fn open_client(flags: &Flags) -> Result<Client, String> {
     if let Some(path) = &flags.roster {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("read the validator roster {path}: {e}"))?;
-        client.trust_roster(qcore::finality::parse_roster(&text)?)?;
+        let genesis = flags
+            .genesis
+            .as_deref()
+            .ok_or("a trusted roster needs the genesis hash it belongs to, pass --genesis <64 hex characters>")?;
+        let genesis: [u8; 32] = qcore::json::from_hex(genesis)?
+            .try_into()
+            .map_err(|_| "the genesis hash must be 32 bytes of hex".to_string())?;
+        client.trust_roster(genesis, qcore::finality::parse_roster(&text)?)?;
     }
     Ok(client)
 }
@@ -788,6 +798,7 @@ fn print_usage() {
     );
     println!("      --known <file>    an address book, one Q1 address per line, a lookalike recipient is refused");
     println!("      --roster <file>   a validator roster you trust, the head is then checked against its finality proof before signing, required on mainnet");
+    println!("      --genesis <hex>   the genesis hash the trusted roster belongs to, required with --roster");
     println!(
         "      --value <n>       the Quon a paid contract call moves, read by the entry at @value"
     );
