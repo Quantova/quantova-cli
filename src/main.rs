@@ -40,6 +40,7 @@ struct Flags {
     insecure_argv: bool,
     show_seed: bool,
     known: Option<String>,
+    roster: Option<String>,
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -93,6 +94,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         insecure_argv: false,
         show_seed: false,
         known: None,
+        roster: None,
     };
     let mut rest = Vec::new();
     let mut i = 0;
@@ -136,6 +138,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
             "--insecure-argv" => flags.insecure_argv = true,
             "--show-seed" => flags.show_seed = true,
             "--known" => flags.known = Some(value("--known")?),
+            "--roster" => flags.roster = Some(value("--roster")?),
             _ => rest.push(arg.clone()),
         }
         i += 1;
@@ -164,7 +167,13 @@ fn address_book(flags: &Flags) -> Result<Vec<String>, String> {
 }
 
 fn open_client(flags: &Flags) -> Result<Client, String> {
-    open_network_client(flags)?.with_address_book(&address_book(flags)?)
+    let client = open_network_client(flags)?.with_address_book(&address_book(flags)?)?;
+    if let Some(path) = &flags.roster {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("read the validator roster {path}: {e}"))?;
+        client.trust_roster(qcore::finality::parse_roster(&text)?)?;
+    }
+    Ok(client)
 }
 
 fn open_network_client(flags: &Flags) -> Result<Client, String> {
@@ -778,6 +787,7 @@ fn print_usage() {
         "      --meter <n>       the execution meter, required for contract deploy, call and order"
     );
     println!("      --known <file>    an address book, one Q1 address per line, a lookalike recipient is refused");
+    println!("      --roster <file>   a validator roster you trust, the head is then checked against its finality proof before signing, required on mainnet");
     println!(
         "      --value <n>       the Quon a paid contract call moves, read by the entry at @value"
     );
