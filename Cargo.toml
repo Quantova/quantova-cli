@@ -3,7 +3,7 @@
 
 [package]
 name = "quantova-cli"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 description = "The Quantova command line client. A terminal tool for post quantum accounts, signed transactions, contract deploy and call, and node queries over the Quantova gateway, built on the QCore Rust core so no signing or wire is ever hand rolled."
