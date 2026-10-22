@@ -13,7 +13,7 @@ const DEFAULT_GATEWAY: &str = "http://127.0.0.1:40404";
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(message) = run(&args) {
-        eprintln!("error {message}");
+        eprintln!("error {}", plain(&message));
         std::process::exit(1);
     }
 }
@@ -42,6 +42,95 @@ struct Flags {
     known: Option<String>,
     roster: Option<String>,
     genesis: Option<String>,
+    seen: Vec<&'static str>,
+}
+
+const KNOWN_FLAGS: &[&str] = &[
+    "--gateway",
+    "--key",
+    "--index",
+    "--max-fee",
+    "--meter",
+    "--value",
+    "--asset",
+    "--scheme-off",
+    "--ptr-off",
+    "--expiry-off",
+    "--expiry",
+    "--layout-hash",
+    "--order-nonce",
+    "--field",
+    "--network",
+    "--acknowledge-mainnet",
+    "--insecure-argv",
+    "--show-seed",
+    "--known",
+    "--roster",
+    "--genesis",
+];
+
+const READ_FLAGS: &[&str] = &[
+    "--gateway",
+    "--network",
+    "--acknowledge-mainnet",
+    "--roster",
+    "--genesis",
+];
+const SIGN_FLAGS: &[&str] = &[
+    "--key",
+    "--index",
+    "--max-fee",
+    "--insecure-argv",
+    "--known",
+];
+const ORDER_FLAGS: &[&str] = &[
+    "--meter",
+    "--value",
+    "--asset",
+    "--scheme-off",
+    "--ptr-off",
+    "--expiry-off",
+    "--expiry",
+    "--layout-hash",
+    "--order-nonce",
+    "--field",
+];
+
+fn allowed_flags(command: &str, sub: &str) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    match (command, sub) {
+        ("key", "new") => out.extend(["--index", "--show-seed"]),
+        ("key", "address" | "pubkey") => out.extend(["--key", "--index", "--insecure-argv"]),
+        ("key", "restore") => out.extend(["--index", "--insecure-argv", "--show-seed"]),
+        ("register" | "send", _) => {
+            out.extend(READ_FLAGS);
+            out.extend(SIGN_FLAGS);
+        }
+        ("contract", "deploy") => {
+            out.extend(READ_FLAGS);
+            out.extend(SIGN_FLAGS);
+            out.push("--meter");
+        }
+        ("contract", "call") => {
+            out.extend(READ_FLAGS);
+            out.extend(SIGN_FLAGS);
+            out.extend(["--meter", "--value", "--asset"]);
+        }
+        ("contract", "order") => {
+            out.extend(READ_FLAGS);
+            out.extend(SIGN_FLAGS);
+            out.extend(ORDER_FLAGS);
+        }
+        _ => out.extend(READ_FLAGS),
+    }
+    out
+}
+
+fn operands(args: &[String], min: usize, max: usize, usage: &str) -> Result<(), String> {
+    if args.len() < min || args.len() > max {
+        return Err(format!("usage: {usage}"));
+    }
+    Ok(())
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -55,12 +144,24 @@ fn run(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
     let (flags, rest) = parse_flags(&args[1..])?;
+    let sub = rest.first().map(String::as_str).unwrap_or("");
+    let allowed = allowed_flags(command, sub);
+    if let Some(flag) = flags.seen.iter().find(|f| !allowed.contains(f)) {
+        return Err(format!(
+            "{flag} does not apply to qtv {command}{}",
+            if sub.is_empty() || !matches!(command, "key" | "contract" | "asset") {
+                String::new()
+            } else {
+                format!(" {sub}")
+            }
+        ));
+    }
     match command {
         "key" => cmd_key(&rest, &flags),
         "account" => cmd_account(&rest, &flags),
-        "register" => cmd_register(&flags),
+        "register" => cmd_register(&rest, &flags),
         "send" => cmd_send(&rest, &flags),
-        "info" => cmd_info(&flags),
+        "info" => cmd_info(&rest, &flags),
         "tx" => cmd_tx(&rest, &flags),
         "contract" => cmd_contract(&rest, &flags),
         "asset" => cmd_asset(&rest, &flags),
@@ -97,11 +198,28 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>), String> {
         known: None,
         roster: None,
         genesis: None,
+        seen: Vec::new(),
     };
     let mut rest = Vec::new();
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
+        let canonical = match arg.as_str() {
+            "-g" => "--gateway",
+            "-k" => "--key",
+            "-i" => "--index",
+            other => other,
+        };
+        match KNOWN_FLAGS.iter().find(|f| **f == canonical) {
+            Some(known) => flags.seen.push(known),
+            None if arg.starts_with('-')
+                && arg.len() > 1
+                && !arg[1..].starts_with(|c: char| c.is_ascii_digit()) =>
+            {
+                return Err(format!("unknown option {}", qcore::shown(arg)));
+            }
+            None => {}
+        }
         let mut value = |name: &str| -> Result<String, String> {
             i += 1;
             args.get(i)
@@ -159,14 +277,45 @@ fn address_book(flags: &Flags) -> Result<Vec<String>, String> {
     let Some(path) = &flags.known else {
         return Ok(Vec::new());
     };
-    let book =
-        std::fs::read_to_string(path).map_err(|e| format!("read the address book {path}: {e}"))?;
+    let book = read_trusted_file(path, "address book")?;
     Ok(book
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(str::to_string)
         .collect())
+}
+
+fn read_trusted_file(path: &str, what: &str) -> Result<String, String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).map_err(|e| format!("read the {what} {path}: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let meta = file
+            .metadata()
+            .map_err(|e| format!("read the {what} {path}: {e}"))?;
+        if !meta.is_file() {
+            return Err(format!("the {what} {path} is not a regular file"));
+        }
+        if meta.permissions().mode() & 0o022 != 0 {
+            return Err(format!(
+                "the {what} {path} can be changed by group or others, restrict it with chmod 644 or tighter before use"
+            ));
+        }
+        let home_owner = std::env::var_os("HOME")
+            .and_then(|h| std::fs::metadata(h).ok())
+            .map(|m| m.uid());
+        if meta.uid() != 0 && Some(meta.uid()) != home_owner {
+            return Err(format!(
+                "the {what} {path} belongs to another user, keep it in a file you own"
+            ));
+        }
+    }
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|e| format!("read the {what} {path}: {e}"))?;
+    Ok(text)
 }
 
 fn genesis_flag(flags: &Flags) -> Result<Option<[u8; 32]>, String> {
@@ -182,8 +331,7 @@ fn genesis_flag(flags: &Flags) -> Result<Option<[u8; 32]>, String> {
 fn open_client(flags: &Flags) -> Result<Client, String> {
     let client = open_network_client(flags)?.with_address_book(&address_book(flags)?)?;
     if let Some(path) = &flags.roster {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| format!("read the validator roster {path}: {e}"))?;
+        let text = read_trusted_file(path, "validator roster")?;
         let genesis = genesis_flag(flags)?.ok_or(
             "a trusted roster needs the genesis hash it belongs to, pass --genesis <64 hex characters>",
         )?;
@@ -356,24 +504,26 @@ fn parse_seed_hex(hex: &str) -> Result<Zeroizing<[u8; 32]>, String> {
 fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "new" => {
+            operands(args, 1, 1, "qtv key new")?;
             let seed = generate_seed()?;
-            let seed_hex = Zeroizing::new(to_hex(&seed[..]));
             let phrase = mnemonic_from_seed(&seed);
-            println!("seed    {}", seed_hex.as_str());
+            if flags.show_seed {
+                print_secret_hex("seed    ", &seed[..])?;
+            }
             println!("phrase  {}", phrase.as_str());
             println!("address {}", account_address(&seed, flags.index));
             println!();
-            println!(
-                "Keep the seed and the phrase secret. The phrase is the only backup of this key."
-            );
+            println!("Keep the phrase secret. It is the only backup of this key.");
             Ok(())
         }
         "address" => {
+            operands(args, 1, 2, "qtv key address [<key>]")?;
             let seed = key_from_arg_or_flag(args.get(1), flags)?;
             println!("{}", account_address(&seed, flags.index));
             Ok(())
         }
         "pubkey" => {
+            operands(args, 1, 2, "qtv key pubkey [<key>]")?;
             let seed = key_from_arg_or_flag(args.get(1), flags)?;
             println!("scheme  1");
             println!(
@@ -390,8 +540,7 @@ fn cmd_key(args: &[String], flags: &Flags) -> Result<(), String> {
             }
             let seed = seed_from_mnemonic(&phrase)?;
             if flags.show_seed {
-                let seed_hex = Zeroizing::new(to_hex(&seed[..]));
-                println!("seed    {}", seed_hex.as_str());
+                print_secret_hex("seed    ", &seed[..])?;
             }
             println!("address {}", account_address(&seed, flags.index));
             Ok(())
@@ -414,20 +563,27 @@ fn key_from_arg_or_flag(
 }
 
 fn cmd_account(args: &[String], flags: &Flags) -> Result<(), String> {
-    let address = args.first().ok_or("usage: qtv account <address>")?;
+    operands(args, 1, 1, "qtv account <address>")?;
+    let address = &args[0];
     if !valid_address(address) {
         return Err("the address is not a Q1 address".to_string());
     }
     let account = open_client(flags)?.account(address)?;
-    println!("address {}", account.address);
-    println!("balance {}", account.balance);
+    println!("address {}", qcore::shown(&account.address));
+    println!("balance {}", amount_text(account.balance));
     println!("nonce   {}", account.nonce);
     println!("scheme  {}", account.scheme);
     println!("has key {}", account.has_key);
     Ok(())
 }
 
-fn cmd_register(flags: &Flags) -> Result<(), String> {
+fn cmd_register(args: &[String], flags: &Flags) -> Result<(), String> {
+    operands(
+        args,
+        0,
+        0,
+        "qtv register --key <seed-or-phrase> --max-fee <n>",
+    )?;
     let seed = resolve_key(flags)?;
     let max_fee = require_max_fee(flags)?;
     let (_signed, outcome) = open_client(flags)?.register(&seed, flags.index, max_fee)?;
@@ -435,9 +591,7 @@ fn cmd_register(flags: &Flags) -> Result<(), String> {
 }
 
 fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
-    if args.len() < 2 {
-        return Err("usage: qtv send <to> <amount> --key <seed-or-phrase>".to_string());
-    }
+    operands(args, 2, 2, "qtv send <to> <amount> --key <seed-or-phrase>, a native transfer only, with the amount as one whole number")?;
     let to = &args[0];
     let amount: u64 = whole(&args[1], "the amount")?;
     let seed = resolve_key(flags)?;
@@ -447,27 +601,39 @@ fn cmd_send(args: &[String], flags: &Flags) -> Result<(), String> {
     report_submit("submitted", outcome)
 }
 
-fn cmd_info(flags: &Flags) -> Result<(), String> {
+fn cmd_info(args: &[String], flags: &Flags) -> Result<(), String> {
+    operands(args, 0, 0, "qtv info")?;
     let info = open_client(flags)?.node_info()?;
-    println!("chain   {}", info.chain_id);
-    println!("genesis {}", info.genesis_hash);
+    println!("chain   {}", qcore::shown(&info.chain_id));
+    println!("genesis {}", qcore::shown(&info.genesis_hash));
     println!("height  {}", info.head_height);
-    println!("fee     {} {}", info.transfer_fee, info.denomination);
-    println!("version {}", info.version);
+    println!(
+        "fee     {} {}",
+        info.transfer_fee,
+        qcore::shown(&info.denomination)
+    );
+    println!("version {}", qcore::shown(&info.version));
     Ok(())
 }
 
 fn cmd_tx(args: &[String], flags: &Flags) -> Result<(), String> {
-    let tx_id = args.first().ok_or("usage: qtv tx <tx-id>")?;
+    operands(args, 1, 1, "qtv tx <tx-id>")?;
+    let tx_id = &args[0];
     match open_client(flags)?.transaction(tx_id)? {
         TxStatus::Finalised {
             height,
             block: Some(block),
-        } => println!("finalised at height {height} in block {block}"),
+        } => println!(
+            "finalised at height {height} in block {}",
+            qcore::shown(&block)
+        ),
         TxStatus::Finalised {
             height,
             block: None,
         } => println!("finalised at height {height}, its block is no longer served"),
+        TxStatus::Unverified { height, .. } => {
+            return Err(format!("UNVERIFIED, the gateway reports the transaction finalised at height {height} but no trusted roster proves it, pass --roster and --genesis to verify"));
+        }
         TxStatus::Pending => println!("pending"),
         TxStatus::Unknown => println!("unknown"),
     }
@@ -495,15 +661,16 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
                 meter,
                 max_fee,
             )?;
-            println!("contract {address}");
+            println!("contract {}", qcore::shown(&address));
             report_submit("deployed", outcome)
         }
         "call" => {
-            if args.len() < 3 {
-                return Err(
-                    "usage: qtv contract call <address> <args-hex> [--value <n>]".to_string(),
-                );
-            }
+            operands(
+                args,
+                3,
+                3,
+                "qtv contract call <address> <args-hex> [--value <n>]",
+            )?;
             let target = &args[1];
             let call_args = from_hex(&args[2])?;
             let seed = resolve_key(flags)?;
@@ -591,11 +758,15 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             report_submit("ordered", outcome)
         }
         "storage" => {
-            let address = args.get(1).ok_or("usage: qtv contract storage <address>")?;
-            let slots = open_client(flags)?.storage(address)?;
+            operands(args, 2, 2, "qtv contract storage <address>")?;
+            let slots = open_client(flags)?.storage(&args[1])?;
             println!("slots {}", slots.len());
             for slot in slots {
-                println!("  {} {}", to_hex(&slot.slot), slot.value);
+                println!(
+                    "  {} {}",
+                    to_hex(&slot.slot),
+                    qcore::shown(&slot.value.to_string())
+                );
             }
             Ok(())
         }
@@ -677,14 +848,12 @@ fn parse_order_fields(specs: &[String]) -> Result<Vec<FieldArg>, String> {
 fn cmd_asset(args: &[String], flags: &Flags) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "balance" => {
-            if args.len() < 3 {
-                return Err("usage: qtv asset balance <issuer> <holder>".to_string());
-            }
+            operands(args, 3, 3, "qtv asset balance <issuer> <holder>")?;
             let (issuer, holder) = (&args[1], &args[2]);
             let balance = open_client(flags)?.asset_balance(issuer, holder)?;
-            println!("issuer  {issuer}");
-            println!("holder  {holder}");
-            println!("balance {balance}");
+            println!("issuer  {}", qcore::shown(issuer));
+            println!("holder  {}", qcore::shown(holder));
+            println!("balance {balance} base units");
             Ok(())
         }
         _ => Err("usage: qtv asset balance <issuer> <holder>".to_string()),
@@ -692,16 +861,14 @@ fn cmd_asset(args: &[String], flags: &Flags) -> Result<(), String> {
 }
 
 fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
-    let height: u64 = whole(
-        args.first().ok_or("usage: qtv events <height>")?,
-        "the height",
-    )?;
+    operands(args, 1, 1, "qtv events <height>")?;
+    let height: u64 = whole(&args[0], "the height")?;
     let events = open_client(flags)?.events(height)?;
     println!("events {}", events.len());
     for event in events {
         println!(
             "  {} {} {}",
-            event.contract,
+            qcore::shown(&event.contract),
             to_hex(&event.selector),
             to_hex(&event.data)
         );
@@ -709,29 +876,20 @@ fn cmd_events(args: &[String], flags: &Flags) -> Result<(), String> {
     Ok(())
 }
 
-fn fee_units(meter: u64) -> u64 {
-    meter.div_ceil(qcore::NATIVE_TRANSFER_METER)
-}
-
 fn required_meter(flags: &Flags, what: &str) -> Result<u64, String> {
     let meter = flags.meter.ok_or_else(|| {
         format!(
-            "pass --meter <n>, the execution meter for this {what}; the fee you authorise is one transfer fee for every {} meter, so size it to the {what} rather than signing a large default",
-            qcore::NATIVE_TRANSFER_METER
+            "pass --meter <n>, the execution budget for this {what}, so the {what} never runs on a large default budget you did not choose"
         )
     })?;
-    eprintln!(
-        "meter {meter} authorises a fee of up to {} transfer fees",
-        fee_units(meter)
-    );
     Ok(meter)
 }
 
 fn report_submit(verb: &str, outcome: Submit) -> Result<(), String> {
     match outcome {
         Submit::Accepted { state, tx_id } => {
-            println!("{verb} {tx_id}");
-            println!("state    {state}");
+            println!("{verb} {}", qcore::shown(&tx_id));
+            println!("state    {}", qcore::shown(&state));
             Ok(())
         }
         Submit::Rejected {
@@ -739,13 +897,55 @@ fn report_submit(verb: &str, outcome: Submit) -> Result<(), String> {
             expected,
             got,
         } => {
-            let mut message = format!("the node rejected the transaction: {reason}");
+            let mut message = format!(
+                "the node rejected the transaction: {}",
+                qcore::shown(&reason)
+            );
             if let (Some(expected), Some(got)) = (expected, got) {
                 message.push_str(&format!(" (expected nonce {expected}, got {got})"));
             }
             Err(message)
         }
     }
+}
+
+fn plain(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{061c}' | '\u{feff}') {
+                '?'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn print_secret_hex(label: &str, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut line = Zeroizing::new(Vec::with_capacity(label.len() + bytes.len() * 2 + 1));
+    line.extend_from_slice(label.as_bytes());
+    for b in bytes {
+        line.push(DIGITS[(b >> 4) as usize]);
+        line.push(DIGITS[(b & 15) as usize]);
+    }
+    line.push(b'\n');
+    let mut out = std::io::stdout().lock();
+    out.write_all(&line)
+        .and_then(|_| out.flush())
+        .map_err(|e| format!("write the seed: {e}"))
+}
+
+fn amount_text(base: u128) -> String {
+    let unit = 10u128.pow(u32::from(qcore::DECIMALS));
+    format!(
+        "{}.{:0width$} {} ({base} base units)",
+        base / unit,
+        base % unit,
+        qcore::DENOMINATION,
+        width = usize::from(qcore::DECIMALS)
+    )
 }
 
 fn to_hex(bytes: &[u8]) -> String {
@@ -775,7 +975,7 @@ fn print_usage() {
     println!("  qtv <command> [flags]");
     println!();
     println!("commands");
-    println!("  key new                          create an account, its seed, phrase, and address");
+    println!("  key new                          create an account, its phrase and address, add --show-seed for the seed hex");
     println!("  key address [<key>]              the address for a key and index");
     println!("  key pubkey  [<key>]              the scheme, public key, and address, for genesis");
     println!("  key restore <phrase>             recover a seed and address from a phrase");
@@ -815,7 +1015,7 @@ fn print_usage() {
         "      --network <name>  testnet or mainnet, required to sign for either public network"
     );
     println!(
-        "      --meter <n>       the execution meter, required for contract deploy, call and order"
+        "      --meter <n>       the execution budget, required for contract deploy, call and order, it does not change the one locked fee"
     );
     println!("      --known <file>    an address book, one Q1 address per line, a lookalike recipient is refused");
     println!("      --roster <file>   a validator roster you trust, the head is then checked against its finality proof before signing, required on mainnet");

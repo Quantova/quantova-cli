@@ -51,7 +51,7 @@ One seed derives many accounts. The `--index <n>` flag, short form `-i`, picks t
 
 ## The fee ceiling and the meter
 
-`--max-fee <n>` is the most you will pay in fee. If the gateway reports a higher fee the CLI refuses to sign. `--meter <n>` sets the execution budget, and contract deploy, call and order refuse to sign without it, so no command signs for a large default budget you did not choose. A meter authorises one transfer fee for every started 1210 units.
+`--max-fee <n>` is the most you will pay in fee. If the gateway reports a higher fee the CLI refuses to sign. `--meter <n>` sets the execution budget, and contract deploy, call and order refuse to sign without it, so no command runs on a large default budget you did not choose. Under protocol 2 every transaction pays the one locked fee and a contract deploy also pays the frozen deploy fee, so the meter bounds execution only and never changes the fee.
 
 ## A minimal setup
 
