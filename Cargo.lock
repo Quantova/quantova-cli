@@ -125,7 +125,7 @@ source = "git+https://github.com/Quantova/Quantova-Chain.git?rev=806cdd956e277cf
 
 [[package]]
 name = "quantova-cli"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "qcore",
  "qtv-wipe",
