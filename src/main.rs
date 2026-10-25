@@ -651,6 +651,9 @@ fn cmd_tx(args: &[String], flags: &Flags) -> Result<(), String> {
             height,
             block: None,
         } => println!("finalised at height {height}, its block is no longer served"),
+        TxStatus::Included { height, .. } => println!(
+            "included at height {height}, a contract call whose outcome is shown only by its event"
+        ),
         TxStatus::Unverified { height, .. } => {
             return Err(format!("UNVERIFIED, the gateway reports the transaction finalised at height {height} but no trusted roster proves it, pass --roster and --genesis to verify"));
         }
