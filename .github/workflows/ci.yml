@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           pin() { awk -v k="$1" '$1==k{print $2}' quantova-cli/cross-repo-pins; }
-          for k in Q-Crypto Quantova-Chain QVM QCore.rs; do
+          for k in Q-Crypto Quantova-Chain QVM QRC-CONSENSUS QCore.rs; do
             v=$(pin "$k")
             case "$v" in
               *[!0-9a-f]* | "") echo "cross-repo-pins $k is not a commit: '$v'" >&2; exit 1 ;;
@@ -34,7 +34,7 @@ jobs:
               echo "cross-repo-pins $k must name a full commit, not '$v'" >&2; exit 1
             fi
           done
-          for k in Q-Crypto Quantova-Chain QVM; do
+          for k in Q-Crypto Quantova-Chain QVM QRC-CONSENSUS; do
             locked=$(grep -oE "$k\\.git\\?rev=[0-9a-f]{40}" quantova-cli/Cargo.lock | sed "s/.*rev=//" | sort -u)
             if [ "$locked" != "$(pin "$k")" ]; then
               echo "Cargo.lock $k does not match the pinned $(pin "$k")" >&2
@@ -43,6 +43,7 @@ jobs:
             fi
           done
           echo "qcore_rs=$(pin QCore.rs)" >> "$GITHUB_OUTPUT"
+          awk '/^\[profile.release\]/{p=1;next} /^\[/{p=0} p && /^overflow-checks *= *true/{f=1} END{exit !f}' quantova-cli/Cargo.toml || { echo "the release profile must keep overflow checks on" >&2; exit 1; }
           echo "quantova_chain=$(pin Quantova-Chain)" >> "$GITHUB_OUTPUT"
           echo "qvm=$(pin QVM)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

@@ -392,24 +392,44 @@ fn require_max_fee(flags: &Flags) -> Result<u128, String> {
     }
 }
 
+const SECRET_TEXT_MAX: usize = 64 * 1024;
+
+fn read_secret_text(
+    reader: &mut impl std::io::Read,
+    what: &str,
+) -> Result<Zeroizing<String>, String> {
+    let mut buffer = Zeroizing::new(vec![0u8; SECRET_TEXT_MAX]);
+    let mut filled = 0usize;
+    loop {
+        if filled == SECRET_TEXT_MAX {
+            return Err(format!("{what} is longer than {SECRET_TEXT_MAX} bytes"));
+        }
+        let read = reader
+            .read(&mut buffer[filled..])
+            .map_err(|e| format!("read {what}: {e}"))?;
+        if read == 0 {
+            break;
+        }
+        filled += read;
+    }
+    let text = std::str::from_utf8(&buffer[..filled])
+        .map_err(|_| format!("{what} is not UTF-8 text"))?
+        .trim();
+    let mut out = Zeroizing::new(String::with_capacity(text.len()));
+    out.push_str(text);
+    Ok(out)
+}
+
 fn read_phrase(args: &[String], insecure: bool) -> Result<Zeroizing<String>, String> {
-    use std::io::Read;
     if args.is_empty() {
-        let mut body = Zeroizing::new(String::new());
-        std::io::stdin()
-            .read_to_string(&mut body)
-            .map_err(|e| format!("read the phrase from stdin: {e}"))?;
-        return Ok(Zeroizing::new(body.trim().to_string()));
+        return read_secret_text(&mut std::io::stdin(), "the phrase from stdin");
     }
     if args.len() == 1 {
         if let Some(path) = args[0].trim().strip_prefix('@') {
             let mut file =
                 std::fs::File::open(path).map_err(|e| format!("read the phrase file: {e}"))?;
             refuse_if_key_file_is_shared(&file, path)?;
-            let mut body = Zeroizing::new(String::new());
-            file.read_to_string(&mut body)
-                .map_err(|e| format!("read the phrase file: {e}"))?;
-            return Ok(Zeroizing::new(body.trim().to_string()));
+            return read_secret_text(&mut file, "the phrase file");
         }
     }
     let phrase = Zeroizing::new(args.join(" "));
@@ -701,13 +721,14 @@ fn cmd_contract(args: &[String], flags: &Flags) -> Result<(), String> {
             report_submit("called", outcome)
         }
         "order" => {
-            if args.len() < 3 {
-                return Err(
-                    "usage: qtv contract order <address> <selector-hex> --scheme-off <n> \
+            let usage = "qtv contract order <address> <selector-hex> --scheme-off <n> \
                             --ptr-off <n> --expiry-off <n> --layout-hash <hex> [--order-nonce <n>] [--expiry <unix seconds>] \
-                            --field <offset:type:value> ... --key <owner>"
-                        .to_string(),
-                );
+                            --field <offset:type:value> ... --key <owner>";
+            operands(args, 3, 3, usage)?;
+            if flags.fields.is_empty() {
+                return Err(format!(
+                    "pass at least one --field <offset:type:value>, an order signs its fields\n{usage}"
+                ));
             }
             let target = &args[1];
             let selector = parse_selector(&args[2])?;
